@@ -9,7 +9,14 @@ app = Flask(__name__)
 # Update CORS to allow both localhost:5174 and standard React development port
 CORS(app, origins=["http://localhost:5174", "http://localhost:3000", "http://127.0.0.1:5174", "http://127.0.0.1:3000"])
 
+
+
 @app.route("/chat", methods=["POST"])
+def route_to_model():
+    data = request.get_json()
+    user_message = data.get("message")
+    model = data.get("model")
+
 def invoke_chute():
     data = request.get_json()
     user_message = data.get("message")

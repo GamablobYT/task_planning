@@ -5,7 +5,7 @@ import ChatInput from '../components/ChatInput';
 import useStore from '../store/store';
 
 function ChatPage() {
-  const { messages, addMessage, updateMessage } = useStore();
+  const { messages, addMessage, updateMessage, selectedModel } = useStore();
   const [inputValue, setInputValue] = useState('');
   const [isBotTyping, setIsBotTyping] = useState(false);
 
@@ -29,7 +29,8 @@ function ChatPage() {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          message: message
+          message: message,
+          model: selectedModel
         })
       });
       

@@ -6,7 +6,7 @@ const useStore = create(
     messages: [
       { id: Date.now(), text: "Hello! I'm your friendly chat assistant. How can I help you today?", sender: "bot" }
     ],
-    selectedModel: "Deepseek-R1",
+    selectedModel: "deepseek-ai/DeepSeek-R1",
 
     addMessage: (message) => {
       set((state) => {

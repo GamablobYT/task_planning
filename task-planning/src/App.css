@@ -2,6 +2,11 @@
 /* ... (styles for #root, .logo, .card, etc. can be removed if not used) ... */
 
 /* Custom Animations - Defined as standard CSS */
+
+button:focus-visible {
+  outline: 0;
+}
+
 @keyframes fadeInUp {
   from {
     opacity: 0;
@@ -108,8 +113,26 @@
   margin-bottom: 0.5em;
 }
 
+.markdown ul {
+  list-style-type: disc;
+}
+
+.markdown ol {
+  list-style-type: decimal;
+}
+
 .markdown li {
   margin-bottom: 0.25em;
+  display: list-item; /* Ensures list items show bullets/numbers */
+}
+
+.markdown li > ul {
+  list-style-type: circle;
+  margin-top: 0.25em;
+}
+
+.markdown li > ol {
+  margin-top: 0.25em;
 }
 
 .markdown code {
@@ -130,6 +153,7 @@
   max-height: 400px; /* Limit height and make vertically scrollable if needed */
   overflow-y: auto;
   position: relative;
+  padding-top: 1.5rem; /* Adjusted to accommodate button */
 }
 
 .markdown pre code {
@@ -146,13 +170,13 @@
   content: "code";
   position: absolute;
   top: 0;
-  right: 0;
+  left: 0;
   padding: 2px 6px;
   font-size: 0.7em;
   background-color: #2d3748;
   color: #a0aec0;
-  border-bottom-left-radius: 4px;
-  border-top-right-radius: 4px;
+  border-bottom-right-radius: 4px;
+  border-top-left-radius: 4px;
   opacity: 0.8;
 }
 
@@ -166,4 +190,38 @@
 .markdown a {
   color: #38bdf8;
   text-decoration: underline;
+}
+
+/* Code block container and copy button */
+.code-block-container {
+  position: relative;
+}
+
+.copy-code-button {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0.25rem;
+  background-color: rgba(45, 55, 72, 0.7);
+  color: #a0aec0;
+  border: 1px solid #4a5568;
+  border-radius: 0.25rem;
+  opacity: 0.8;
+  transition: all 0.2s ease;
+}
+
+.copy-code-button:hover {
+  background-color: rgba(45, 55, 72, 0.9);
+  color: #e2e8f0;
+  opacity: 1;
+}
+
+.copy-code-button:active {
+  transform: scale(0.95);
 }

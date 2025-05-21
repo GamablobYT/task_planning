@@ -1,0 +1,169 @@
+/* Remove old Vite default styles if they are no longer needed */
+/* ... (styles for #root, .logo, .card, etc. can be removed if not used) ... */
+
+/* Custom Animations - Defined as standard CSS */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(15px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-fadeInUp {
+  animation: fadeInUp 0.4s ease-out forwards;
+}
+
+/* Typing indicator dot animation - make sure it's working properly */
+@keyframes typing-dot-bounce {
+  0%, 60%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-4px); }
+}
+
+.typing-dot {
+  animation: typing-dot-bounce 1.4s infinite ease-in-out;
+  opacity: 0.7;
+}
+.typing-dot-1 { animation-delay: 0s; }
+.typing-dot-2 { animation-delay: 0.2s; }
+.typing-dot-3 { animation-delay: 0.4s; }
+
+/* Custom scrollbar for webkit browsers - with direct color values */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1e293b; /* slate-800 equivalent */
+}
+
+::-webkit-scrollbar-thumb {
+  background: #475569; /* slate-600 equivalent */
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #64748b; /* slate-500 equivalent */
+}
+
+/* For Firefox - with direct color values */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #475569 #1e293b; /* slate-600 and slate-800 equivalents */
+}
+
+/* Markdown styling */
+.markdown h1 {
+  font-size: 1.5em;
+  font-weight: bold;
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+}
+
+.markdown h2 {
+  font-size: 1.3em;
+  font-weight: bold;
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+}
+
+.markdown h3 {
+  font-size: 1.17em;
+  font-weight: bold;
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+}
+
+.markdown h4 {
+  font-size: 1.05em;
+  font-weight: bold;
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+}
+
+.markdown h5, .markdown h6 {
+  font-size: 1em;
+  font-weight: bold;
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+}
+
+.markdown strong, .markdown b {
+  font-weight: bold;
+}
+
+.markdown p {
+  margin-bottom: 0.5em;
+}
+
+.markdown p:last-of-type {
+  margin-bottom: 0;
+}
+
+.markdown ul, .markdown ol {
+  margin-left: 1.5em;
+  margin-bottom: 0.5em;
+}
+
+.markdown li {
+  margin-bottom: 0.25em;
+}
+
+.markdown code {
+  font-family: monospace;
+  background-color: rgba(0, 0, 0, 0.2);
+  padding: 0.1em 0.2em;
+  border-radius: 3px;
+  font-size: 0.9em;
+}
+
+.markdown pre {
+  background-color: #1a2234; /* Darker background for code blocks */
+  border: 1px solid #2d3748; /* Add border */
+  border-radius: 5px;
+  padding: 0.75em;
+  margin: 0.75em 0;
+  overflow-x: auto; /* Make horizontally scrollable */
+  max-height: 400px; /* Limit height and make vertically scrollable if needed */
+  overflow-y: auto;
+  position: relative;
+}
+
+.markdown pre code {
+  background-color: transparent; /* Remove background from code inside pre */
+  padding: 0;
+  display: block;
+  color: #e2e8f0; /* Light color for code text */
+  line-height: 1.5;
+  font-size: 0.85em;
+}
+
+/* Add a subtle language indicator if needed */
+.markdown pre::before {
+  content: "code";
+  position: absolute;
+  top: 0;
+  right: 0;
+  padding: 2px 6px;
+  font-size: 0.7em;
+  background-color: #2d3748;
+  color: #a0aec0;
+  border-bottom-left-radius: 4px;
+  border-top-right-radius: 4px;
+  opacity: 0.8;
+}
+
+.markdown blockquote {
+  border-left: 3px solid #64748b;
+  padding-left: 0.5em;
+  margin: 0.5em 0;
+  color: #94a3b8;
+}
+
+.markdown a {
+  color: #38bdf8;
+  text-decoration: underline;
+}

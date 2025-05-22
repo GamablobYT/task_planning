@@ -3,14 +3,24 @@ import Header from '../components/Header';
 import MessageList from '../components/MessageList';
 import ChatInput from '../components/ChatInput';
 import useStore from '../store/store';
-import { useNavigate } from 'react-router';
+import { useNavigate} from 'react-router';
 
 function ChatPage({chatID, onNewChat}) {
-  const { messages, addMessage, updateMessage, clearMessages, selectedModel, fetchMessagesForID } = useStore();
+  const { messages, addMessage, updateMessage, clearMessages, selectedModel, fetchMessagesForID, chats } = useStore();
   const [inputValue, setInputValue] = useState('');
   const [isBotTyping, setIsBotTyping] = useState(false);
   const [chat_ID, setChatID] = useState(chatID || null);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    //if url chatid not in chats, navigate to /chats
+    if (chatID && !chats.some(chat => chat.id === chatID) || !chatID || chats.length === 0) {
+      navigate('/chat');
+    }
+    else {
+      console.log(chatID, "in", chats);
+    }
+  }, []);
 
   useEffect(() => {
     //if chatid changed, clear messages, get messages

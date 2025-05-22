@@ -40,7 +40,7 @@ const Sidebar = ({ chats = [], onNewChat }) => {
       <div className="flex items-center p-3 sm:p-4 border-b border-slate-700/70">
         <button 
           onClick={toggleSidebar}
-          className="sidebar-item p-1.5 rounded-lg text-slate-300 hover:bg-slate-700/70 hover:text-slate-100 transition-all"
+          className="sidebar-item p-1.5 rounded-lg text-slate-300 hover:bg-slate-700/70 cursor-pointer focus:bg-slate-700/70 focus:ring-2 hover:text-slate-100 transition-all"
           aria-label={expanded ? "Collapse sidebar" : "Expand sidebar"}
         >
           {expanded ? (
@@ -59,7 +59,7 @@ const Sidebar = ({ chats = [], onNewChat }) => {
           </span>
           <button
             onClick={handleNewChat}
-            className="p-2 rounded-full bg-sky-500 hover:bg-sky-600 text-white transition-all duration-200 ease-in-out hover:scale-105 shadow-md sidebar-icon"
+            className="p-2 rounded-full bg-sky-500 hover:bg-sky-600 focus:ring-2 text-white transition-all duration-200 ease-in-out hover:scale-105 cursor-pointer shadow-md sidebar-icon"
             aria-label="New Chat"
             title="New Chat"
           >
@@ -82,7 +82,7 @@ const Sidebar = ({ chats = [], onNewChat }) => {
               <button
                 key={chat.id}
                 onClick={() => handleChatSelect(chat.id)}
-                className={`sidebar-item p-3 rounded-lg flex items-center transition-all ${
+                className={`sidebar-item p-3 rounded-lg focus:bg-slate-700/90 focus:ring-2 flex items-center transition-all ${
                   isActive 
                     ? 'bg-slate-700/90 text-slate-100 shadow-sm' 
                     : 'text-slate-300 hover:bg-slate-700/50 hover:text-slate-100'

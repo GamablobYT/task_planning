@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import "./App.css";
 import ChatPage from './pages/ChatPage';
@@ -7,7 +7,7 @@ import useStore from './store/store';
 
 function App() {
   const {selectedModel, chats, setChats, activeChatID} = useStore();
-  
+
   const handleNewChat = async () => {
     const response = await fetch("http://127.0.0.1:5000/new-chat", {
       method: "POST",

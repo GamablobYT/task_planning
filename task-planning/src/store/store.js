@@ -3,10 +3,10 @@ import { immer } from "zustand/middleware/immer";
 
 const useStore = create(
   immer((set) => ({
-    messages: [
-      { id: Date.now(), text: "Hello! I'm your friendly chat assistant. How can I help you today?", sender: "bot" }
-    ],
+    messages: [],
     selectedModel: "deepseek-ai/DeepSeek-R1",
+    chats: [],
+    activeChatID: null,
 
     addMessage: (message) => {
       set((state) => {
@@ -23,11 +23,52 @@ const useStore = create(
       });
     },
 
+    setMessages: (messages) => {
+      set((state) => {
+        state.messages = messages;
+      });
+    },
+
+    clearMessages: () => {
+      set((state) => {
+        state.messages = [];
+      });
+    },
+
     setModel: (model) => {
       set((state) => {
         state.selectedModel = model;
       });
     },
+
+    setChats: (chats) => {
+      set((state) => {
+        state.chats = chats;
+      });
+    },
+
+    setActiveChatID: (chatID) => {
+      set((state) => {
+        state.activeChatID = chatID;
+      });
+    },
+
+    fetchMessagesForID: async (chatID) => {
+      const response = await fetch(`http://127.0.01:5000/fetch-messages/${chatID}`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json"
+        },
+      });
+      if (!response.ok) {
+        console.error("Failed to fetch messages");
+        return;
+      }
+      const data = await response.json();
+      set((state) => {
+        state.messages = data.messages;
+      });
+    }
   }))
 );
 

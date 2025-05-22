@@ -152,11 +152,10 @@ const Message = ({ message }) => {
                 {regularText}
               </Markdown>
             </div>
-            
-            {isTyping && <TypingIndicator />}
           </div>
         </div>
       )}
+      {isTyping && <TypingIndicator />}
     </div>
   );
 };

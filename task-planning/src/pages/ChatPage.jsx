@@ -55,8 +55,8 @@ function ChatPage({chatID, onNewChat}) {
       // Add a bot message with a typing indicator
       addMessage({
         id: botResponseId,
-        text: '',
-        sender: 'bot',
+        content: '',
+        role: 'bot',
         isTyping: true
       });
       
@@ -107,7 +107,7 @@ function ChatPage({chatID, onNewChat}) {
             if (parsedData.error) {
               console.error("Error from server:", parsedData.error);
               updateMessage(botResponseId, { 
-                text: "Sorry, an error occurred: " + parsedData.error, 
+                content: "Sorry, an error occurred: " + parsedData.error, 
                 isTyping: false 
               });
             } else if (parsedData.content) {
@@ -116,7 +116,7 @@ function ChatPage({chatID, onNewChat}) {
               
               // Force immediate update to show streaming effect
               updateMessage(botResponseId, { 
-                text: accumulatedText, 
+                content: accumulatedText, 
                 isTyping: true 
               });
             }
@@ -136,8 +136,8 @@ function ChatPage({chatID, onNewChat}) {
       // Add error message
       addMessage({
         id: Date.now() + 1,
-        text: "Sorry, I'm having trouble connecting to the server right now.",
-        sender: 'bot',
+        content: "Sorry, I'm having trouble connecting to the server right now.",
+        role: 'bot',
         isTyping: false
       });
       
@@ -150,8 +150,8 @@ function ChatPage({chatID, onNewChat}) {
 
     const newUserMessage = {
       id: Date.now(),
-      text: inputValue,
-      sender: 'user',
+      content: inputValue,
+      role: 'user',
     };
     addMessage(newUserMessage);
     setInputValue('');

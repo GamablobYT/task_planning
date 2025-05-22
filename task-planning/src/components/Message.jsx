@@ -3,45 +3,45 @@ import Markdown from 'react-markdown';
 import TypingIndicator from './TypingIndicator';
 
 const Message = ({ message }) => {
-  const { sender, text, isTyping } = message;
+  const { role, content, isTyping } = message;
   
   // Parse text to extract thinking content
-  const parseThinkingContent = (text) => {
-    if (!text) return { regularText: '', thinkingText: '' };
+  const parseThinkingContent = (content) => {
+    if (!content) return { regularText: '', thinkingText: '' };
     
     // Check for opening <think> tag
-    const thinkOpenIndex = text.indexOf('<think>');
+    const thinkOpenIndex = content.indexOf('<think>');
     
     // If no opening tag, all text is regular
-    if (thinkOpenIndex === -1) return { regularText: text, thinkingText: '' };
+    if (thinkOpenIndex === -1) return { regularText: content, thinkingText: '' };
     
     // Find closing tag if it exists
-    const thinkCloseIndex = text.indexOf('</think>', thinkOpenIndex);
+    const thinkCloseIndex = content.indexOf('</think>', thinkOpenIndex);
     
     let thinkingText = '';
     let regularText = '';
     
     // Extract content before the opening tag as regularText
-    regularText = text.substring(0, thinkOpenIndex).trim();
+    regularText = content.substring(0, thinkOpenIndex).trim();
     
     // If closing tag exists, extract thinking text between tags and add text after closing tag to regularText
     if (thinkCloseIndex !== -1) {
-      thinkingText = text.substring(thinkOpenIndex + 7, thinkCloseIndex).trim();
+      thinkingText = content.substring(thinkOpenIndex + 7, thinkCloseIndex).trim();
       
       // Add text after closing tag to regularText if any
-      const afterClosingTag = text.substring(thinkCloseIndex + 8).trim();
+      const afterClosingTag = content.substring(thinkCloseIndex + 8).trim();
       if (afterClosingTag) {
         regularText = regularText ? `${regularText} ${afterClosingTag}` : afterClosingTag;
       }
     } else {
       // No closing tag yet, everything after opening tag is thinking text
-      thinkingText = text.substring(thinkOpenIndex + 7).trim();
+      thinkingText = content.substring(thinkOpenIndex + 7).trim();
     }
     
     return { regularText, thinkingText };
   };
   
-  const { regularText, thinkingText } = parseThinkingContent(text);
+  const { regularText, thinkingText } = parseThinkingContent(content);
   
   // Function to handle copying code to clipboard
   const copyToClipboard = (code) => {
@@ -55,12 +55,12 @@ const Message = ({ message }) => {
       {thinkingText && (
         <div
           className={`flex animate-fadeInUp ${
-            sender === 'user' ? 'justify-end' : 'justify-start'
+            role === 'user' ? 'justify-end' : 'justify-start'
           }`}
         >
           <div
             className={`max-w-xs md:max-w-md lg:max-w-lg xl:max-w-xl max-h-25 overflow-auto px-4 py-2 rounded-xl shadow-md break-words border-2 border-slate-800
-              ${sender === 'user' 
+              ${role === 'user' 
                 ? 'bg-indigo-500' 
                 : 'bg-#2a2234'
               }`}
@@ -110,12 +110,12 @@ const Message = ({ message }) => {
       {regularText && (
         <div
           className={`flex animate-fadeInUp ${
-            sender === 'user' ? 'justify-end' : 'justify-start'
+            role === 'user' ? 'justify-end' : 'justify-start'
           }`}
         >
           <div
             className={`max-w-xs md:max-w-md lg:max-w-lg xl:max-w-xl px-4 py-2 rounded-xl shadow-md break-words ${
-              sender === 'user'
+              role === 'user'
                 ? 'bg-sky-600 rounded-br-none'
                 : 'bg-slate-700 rounded-bl-none'
             }`}

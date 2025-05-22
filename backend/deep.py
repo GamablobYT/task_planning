@@ -158,6 +158,7 @@ def invoke_gemini(message, model, chat_id):
             # Convert chat history to Google's content format
             history = []
             for msg in chat_histories[chat_id]:
+                print(msg)
                 role = msg["role"]
                 content = msg["content"]
                 
@@ -196,6 +197,7 @@ def invoke_gemini(message, model, chat_id):
                 gemini_chats[chat_id] = chat
             
             # Send message and stream response
+            print(history, message)
             response = chat.send_message_stream(message=message)
             for chunk in response:
                 if chunk.text:
@@ -220,11 +222,6 @@ def get_chat_history(chat_id):
         return jsonify({"error": "Invalid chat ID"}), 400
     
     history = chat_histories[chatID].copy()
-
-    for message in history:
-        # Convert keys from "content" and "role" to "text" and "sender"
-        message["text"] = message.pop("content")
-        message["sender"] = message.pop("role")
 
     # Return the chat history for the specified chat ID
     return jsonify({"messages": history})

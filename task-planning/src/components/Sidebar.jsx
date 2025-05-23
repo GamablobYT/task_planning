@@ -26,7 +26,7 @@ const Sidebar = ({ chats = [], onNewChat }) => {
   
   const handleChatSelect = (chatId) => {
     setActiveChatID(chatId);
-    // Navigate to the selected chat
+    // Navigate to the selected chat - the ChatPage useEffect will handle the switch
     navigate(`/chat/${chatId}`);
   };
   

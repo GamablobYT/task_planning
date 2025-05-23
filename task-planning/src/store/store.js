@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
+import apiService from "../utils/api";
 
 const useStore = create(
   immer((set) => ({
@@ -7,6 +8,9 @@ const useStore = create(
     selectedModel: "deepseek-ai/DeepSeek-R1",
     chats: [],
     activeChatID: null,
+    isAuthenticated: null,
+    role: null,
+    csrfToken: null,
 
     addMessage: (message) => {
       set((state) => {
@@ -68,6 +72,43 @@ const useStore = create(
       set((state) => {
         state.messages = data.messages;
       });
+    },
+
+    setAuthentication: (isAuthenticated) => {
+      set((state) => {
+        state.isAuthenticated = isAuthenticated;
+      });
+    },
+
+    setRole: (role) => {
+      set((state) => {
+        state.role = role;
+      });
+    },
+
+    fetchCsrfToken: async () => {
+      try {
+        set((state) => { state.isLoading = true; });
+        const response = await apiService.get('/users/csrf/');
+        set((state) => {
+          state.csrfToken = response.data.csrfToken;
+        });
+      } catch (error) {
+        set((state) => { state.errorMessage = 'Failed to fetch CSRF token'; });
+      } finally {
+        set((state) => { state.isLoading = false; });
+      }
+    },
+
+    fetchChatIDs: async () => {
+      try {
+        const response = await apiService.get('/chats/get-chat-ids/');
+        set((state) => {
+          state.chats = response.data;
+        });
+      } catch (error) {
+        console.error("Failed to fetch chat IDs:", error);
+      }
     }
   }))
 );

@@ -6,7 +6,7 @@ import useStore from '../store/store';
 import { useNavigate} from 'react-router';
 
 function ChatPage({chatID, onNewChat}) {
-  const { messages, addMessage, updateMessage, clearMessages, selectedModel, fetchMessagesForID, chats } = useStore();
+  const { messages, addMessage, updateMessage, clearMessages, selectedModel, fetchMessagesForID, chats, fetchChatIDs } = useStore();
   const [inputValue, setInputValue] = useState('');
   const [isBotTyping, setIsBotTyping] = useState(false);
   const [chat_ID, setChatID] = useState(chatID || null);
@@ -17,8 +17,12 @@ function ChatPage({chatID, onNewChat}) {
     if (chatID && !chats.some(chat => chat.id === chatID) || !chatID || chats.length === 0) {
       navigate('/chat');
     }
-    else {
-      console.log(chatID, "in", chats);
+  }, []);
+
+  useEffect(() => {
+    //fetch chats on first load
+    if (chats.length === 0) {
+      fetchChatIDs();
     }
   }, []);
 
@@ -27,10 +31,48 @@ function ChatPage({chatID, onNewChat}) {
     if (chatID && chatID !== chat_ID) {
       clearMessages();
       setChatID(chatID);
-      // Fetch messages for the new chat ID
-      fetchMessagesForID(chatID);
+      // Call Flask switch-chat API instead of fetchMessagesForID
+      switchToChat(chatID);
     }
   }, [chatID]);
+
+  // Add this new function to handle chat switching
+  const switchToChat = async (chatId) => {
+    try {
+      const response = await fetch('http://127.0.0.1:5000/switch-chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          chat_id: chatId,
+          model: selectedModel
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+      // Load the messages from the response
+      if (data.messages) {
+        data.messages.forEach((msg, index) => {
+          addMessage({
+            id: Date.now() + index,
+            content: msg.content,
+            role: msg.role === 'assistant' ? 'bot' : msg.role,
+            isTyping: false
+          });
+        });
+      }
+      
+      console.log(`Switched to chat ${chatId} with ${data.messages?.length || 0} messages`);
+    } catch (error) {
+      console.error('Error switching chat:', error);
+    }
+  };
 
   const sendMessageToServer = async (message) => {
     try {

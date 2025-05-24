@@ -12,11 +12,11 @@ import apiService from './utils/api';
 import useStore from './store/store';
 
 function App() {
-  const {selectedModel, chats, setChats, activeChatID} = useStore();
+  const {selectedModel, chats, setChats, activeChatID, setActiveChatID} = useStore();
   const {csrfToken, fetchCsrfToken, setRole} = useStore();
   const {isAuthenticated, setAuthentication} = useStore();
 
-  const isAuthPage = window.location.pathname === "/login" || window.location.pathname === "/signup";
+  const isChatPage = window.location.pathname.startsWith("/chat");
 
   useEffect(() => {
     // Check the session when the app loads
@@ -83,7 +83,7 @@ function App() {
   return (
     <Router>
       <div className="flex h-screen bg-slate-900 text-slate-100">
-        {!isAuthPage && <Sidebar chats={chats} onNewChat={handleNewChat} />}
+        {isChatPage && <Sidebar chats={chats} onNewChat={handleNewChat} />}
         <div className="flex-1 overflow-hidden">
           <Routes>
             <Route path="/" element={<Navigate to="/signup" replace />} />
@@ -91,7 +91,7 @@ function App() {
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<SignUp />} />
             <Route element={<ProtectedRoute />} >
-              <Route path="/chat/:chatId?" element={<ChatPage onNewChat={handleNewChat} chatID={activeChatID}/>} />
+              <Route path="/chat/:chatId?" element={<ChatPage onNewChat={handleNewChat} />} />
             </Route>
           </Routes>
         </div>

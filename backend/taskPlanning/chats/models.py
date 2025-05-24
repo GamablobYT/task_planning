@@ -1,5 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import User
+import uuid
 
 #chat model
 class Messages(models.Model):
@@ -8,8 +9,8 @@ class Messages(models.Model):
     """
 
     user = models.ForeignKey(User, on_delete=models.CASCADE)
-    chat_id = models.CharField(max_length=100, unique=True)
-    message = models.TextField()
+    chat_id = models.UUIDField(editable=False)
+    message = models.JSONField()
     time_sent = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

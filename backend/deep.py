@@ -25,6 +25,29 @@ gemini_api_token = os.environ.get("GEMINI_API_KEY", "")
 gemini_client = genai.Client(api_key=gemini_api_token)
 gemini_chats = {}  # Store chat sessions by ID
 
+active_chat_history = []
+
+@app.route("/switch-chat", methods=["POST"])
+def switch_chat():
+    data = request.get_json()
+    chat_id = data.get("chat_id")
+    
+    # Switch to the specified chat history
+    active_chat_history.clear()
+    
+    return jsonify({"message": "Switched to chat history", "chat_id": chat_id})
+
+@app.route("/send-chat-history", methods=["POST"])
+def send_chat_history():
+    data = request.get_json()
+    history = data.get("messages")
+    print(f"Received chat history: {history}")
+
+    # receive the active chat history
+    active_chat_history.extend(history)
+
+    return jsonify({"message": "Chat history received"})
+
 @app.route("/new-chat", methods=["POST"])
 def create_new_chat():
     data = request.get_json()

@@ -49,7 +49,7 @@ def get_chat_history(request, chat_id):
     user = get_user(request)
 
     if not Messages.objects.filter(chat_id=chat_id).exists():
-        return JsonResponse({"error": "Chat doesn't exist"}, status=400)
+        return JsonResponse({"error": "Chat doesn't exist or has no messages"})
 
     # Check if user has access to this chat
     chat_messages = Messages.objects.filter(chat_id=chat_id)

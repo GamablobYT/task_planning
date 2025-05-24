@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { 
   PlusIcon, 
@@ -29,7 +29,12 @@ const Sidebar = ({ chats = [], onNewChat }) => {
     // Navigate to the selected chat - the ChatPage useEffect will handle the switch
     navigate(`/chat/${chatId}`);
   };
-  
+
+  // Uncomment this if you want to log chats whenever they change
+  // useEffect(() => {
+  //   console.log(chats);
+  // }, [chats]);
+
   return (
     <div 
       className={`sidebar h-full flex flex-col transition-all duration-300 ease-in-out bg-gradient-to-b from-slate-900 to-slate-800 border-r border-slate-700 ${

@@ -80,11 +80,12 @@ const SignUp = () => {
       console.error('Signup failed:', error);
     } finally {
       setIsSubmitting(false);
-      if (errors.success) {
-        setTimeout(() => {
-          navigate('/login');
-        }, 2000); // Redirect after 2 seconds
-      }
+    }
+
+    if (errors.success) {
+      setTimeout(() => {
+        navigate('/login');
+      }, 2000); // Redirect after 2 seconds
     }
   };
 
@@ -158,7 +159,7 @@ const SignUp = () => {
             <button
               type="submit"
               disabled={isSubmitting}
-              className="w-full bg-sky-500 hover:bg-sky-600 disabled:bg-sky-800 disabled:cursor-not-allowed text-white font-semibold py-3 px-4 rounded-lg transform hover:scale-105 transition-all duration-200 ease-in-out"
+              className="w-full bg-sky-500 hover:bg-sky-600 disabled:bg-sky-800 disabled:cursor-not-allowed text-white font-semibold py-3 px-4 rounded-lg transform transition-all duration-200 ease-in-out"
             >
               {isSubmitting ? 'Creating Account...' : 'Sign Up'}
             </button>

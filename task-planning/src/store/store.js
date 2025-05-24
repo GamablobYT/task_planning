@@ -104,7 +104,7 @@ const useStore = create(
       try {
         const response = await apiService.get('/chats/get-chat-ids/');
         set((state) => {
-          state.chats = response.data;
+          state.chats = response.data.map(id => ({id: id, title: "Untitled Chat"}));
         });
       } catch (error) {
         console.error("Failed to fetch chat IDs:", error);

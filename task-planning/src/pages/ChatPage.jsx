@@ -1,43 +1,59 @@
-import { useEffect, useState } from 'react';
+import { use, useEffect, useState } from 'react';
 import Header from '../components/Header';
 import MessageList from '../components/MessageList';
 import ChatInput from '../components/ChatInput';
 import useStore from '../store/store';
 import { useNavigate} from 'react-router';
+import apiService from '../utils/api';
 
-function ChatPage({chatID, onNewChat}) {
-  const { messages, addMessage, updateMessage, clearMessages, selectedModel, fetchMessagesForID, chats, fetchChatIDs } = useStore();
+function ChatPage({ onNewChat }) {
+  const { messages, addMessage, updateMessage, clearMessages, selectedModel, fetchMessagesForID, chats, fetchChatIDs, activeChatID, setActiveChatID } = useStore();
   const [inputValue, setInputValue] = useState('');
   const [isBotTyping, setIsBotTyping] = useState(false);
-  const [chat_ID, setChatID] = useState(chatID || null);
+  const [chat_ID, setChatID] = useState(activeChatID || null);
+  const [isChatsLoaded, setIsChatsLoaded] = useState(false);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    //if url chatid not in chats, navigate to /chats
-    if (chatID && !chats.some(chat => chat.id === chatID) || !chatID || chats.length === 0) {
-      navigate('/chat');
-    }
-  }, []);
+  //get active chat id from url after /chat/
+  const currentPath = window.location.pathname;
+  setActiveChatID(currentPath.split('/')[2] || null);
 
   useEffect(() => {
     //fetch chats on first load
     if (chats.length === 0) {
-      fetchChatIDs();
+      fetchChatIDs().then(() => {
+        setIsChatsLoaded(true);
+      });
+    } else {
+      setIsChatsLoaded(true);
     }
-  }, []);
+  }, [chats.length, fetchChatIDs]);
 
   useEffect(() => {
     //if chatid changed, clear messages, get messages
-    if (chatID && chatID !== chat_ID) {
-      clearMessages();
-      setChatID(chatID);
-      // Call Flask switch-chat API instead of fetchMessagesForID
-      switchToChat(chatID);
+    clearMessages();
+    // console.log("Active chat ID", activeChatID);
+    setChatID(activeChatID);
+    // Call Flask switch-chat API instead of fetchMessagesForID
+    switchToChat(activeChatID);
+  }, [activeChatID]);
+
+  useEffect(() => {
+    //if url chatid not in chats, navigate to /chats - only run after chats are loaded
+    if (isChatsLoaded) {
+      if ((activeChatID && !chats.some(chat => chat.id === activeChatID)) || (!activeChatID && chats.length > 0)) {
+        // console.log("chatid: ", chat_ID, " not found in chats: ", chats);
+        navigate('/chat');
+      }
     }
-  }, [chatID]);
+  }, [activeChatID, chats, isChatsLoaded, navigate]);
 
   // Add this new function to handle chat switching
   const switchToChat = async (chatId) => {
+    if (!chatId) {
+      //initial load, no chat ID
+      return;
+    }
     try {
       const response = await fetch('http://127.0.0.1:5000/switch-chat', {
         method: 'POST',
@@ -46,29 +62,43 @@ function ChatPage({chatID, onNewChat}) {
         },
         body: JSON.stringify({
           chat_id: chatId,
-          model: selectedModel
         })
       });
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
 
-      const data = await response.json();
-      
-      // Load the messages from the response
-      if (data.messages) {
-        data.messages.forEach((msg, index) => {
+      try {
+        const response2 = await apiService.get(`chats/get-chat-history/${chatId}/`);
+        const data2 = response2.data;
+        // console.log(data2);
+        // data2.forEach((msg, index) => {
+        //   addMessage({
+        //     id: Date.now() + index,
+        //     content: msg.content,
+        //     role: msg.role === 'assistant' ? 'bot' : msg.role,
+        //     isTyping: false
+        //   });
+        // });
+
+        if (response2.data.error && response2.data.error === "Chat doesn't exist or has no messages") {
+          console.warn("No messages found for this chat ID:", chatId);
+          return; // No messages to process
+        }
+
+        for (const msg of data2) {
+          const message = msg.message;
           addMessage({
-            id: Date.now() + index,
-            content: msg.content,
-            role: msg.role === 'assistant' ? 'bot' : msg.role,
+            id: Date.now() + Math.random(), // Use random to avoid collisions
+            content: message.content,
+            role: message.role === 'assistant' ? 'bot' : message.role,
             isTyping: false
           });
-        });
+        }
+
+        // console.log("Fetched messages: ", useStore.getState().messages);
+      } catch (error) {
+        console.error("Error fetching chat history:", error);
+        throw new Error("Failed to fetch chat history: " + error.message);
       }
-      
-      console.log(`Switched to chat ${chatId} with ${data.messages?.length || 0} messages`);
     } catch (error) {
       console.error('Error switching chat:', error);
     }
@@ -111,7 +141,21 @@ function ChatPage({chatID, onNewChat}) {
         role: 'bot',
         isTyping: true
       });
-      
+
+
+      try {
+        const sendingMessageResponse = await apiService.post('chats/save-chat/', {
+          chat_id: activeChatID,
+          message: {
+            role: 'user',
+            content: message
+          }
+        });
+      } catch (error) {
+        console.error("Error saving user message:", error);
+        throw new Error("Failed to save user message: " + error.message);
+      }
+
       // Use fetch for streaming - with the activeChatID
       const response = await fetch('http://127.0.0.1:5000/chat', {
         method: 'POST',
@@ -140,6 +184,17 @@ function ChatPage({chatID, onNewChat}) {
         
         if (done) {
           console.log("Stream complete");
+          try {
+          const response = await apiService.post('chats/save-chat/', {
+            chat_id: activeChatID,
+            message: {
+              role: 'assistant',
+              content: accumulatedText
+            }
+          });
+        } catch (error) {
+          console.error("Error saving bot response:", error);
+        }
           break;
         }
         

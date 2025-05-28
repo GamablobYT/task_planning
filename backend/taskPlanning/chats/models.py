@@ -11,6 +11,7 @@ class Messages(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     chat_id = models.UUIDField(editable=False)
     message = models.JSONField()
+    message_id = models.UUIDField(default=uuid.uuid4, null=True)
     time_sent = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

@@ -120,6 +120,12 @@ This document outlines the design aesthetics and expectations for components in 
   ```
 - **Button Hover**: Scale effect (transform hover:scale-105)
 - **Focus States**: Ring effect with focus:ring-2
+- **Settings Sidebar**: Width transition with content slide (300ms ease-in-out)
+  ```css
+  .w-0 { width: 0; }
+  .w-96 { width: 24rem; }
+  overflow: hidden; /* Prevents content overflow during transition */
+  ```
 
 ## Responsive Breakpoints
 
@@ -159,3 +165,85 @@ This document outlines the design aesthetics and expectations for components in 
 - **Links**:
   - Color: #38bdf8
   - Text decoration: underline
+
+### SettingsSidebar
+
+- **Purpose**: Provides a collapsible sidebar for configuring AI model parameters
+- **Layout**:
+  - Flex layout that pushes main content to the left when open
+  - Floating settings button positioned fixed right-6 top-24
+  - Sidebar width: w-96 when open, w-0 when closed
+  - No overlay - content slides alongside main chat area
+- **Visual Design**:
+  - Background: bg-slate-800/95 backdrop-blur-md
+  - Border: border-l border-slate-600/80
+  - Header with sky-400 title color and close button
+  - Form controls with slate-700 backgrounds
+- **Animation**:
+  - Width transition: w-0 to w-96 with overflow-hidden
+  - Duration: 300ms ease-in-out
+  - Main content slides with transition-all duration-300
+- **Interactions**:
+  - Escape key to close
+  - Close button in header
+  - Floating button with hover scale effect (hover:scale-105)
+- **Form Controls**:
+  - Textarea for system prompt: h-24 with resize-none
+  - Range sliders with custom thumb styling
+  - Number input for max tokens
+  - Reset button with full width
+- **Accessibility**:
+  - Proper ARIA labels
+  - Keyboard navigation support
+  - Focus management when opening/closing
+
+### ConfirmationModal
+
+- **Purpose**: Provides a modal dialog for confirming destructive actions like deleting chats
+- **Layout**:
+  - Fixed overlay covering entire viewport: fixed inset-0 z-50
+  - Centered content with backdrop blur: bg-slate-900/75 backdrop-blur-sm
+  - Modal content: max-w-md w-full mx-4
+- **Visual Design**:
+  - Background: bg-slate-800 with border-slate-600
+  - Shadow: shadow-xl for depth
+  - Rounded corners: rounded-lg
+  - Padding: p-6
+- **Header**:
+  - Title: text-lg font-semibold text-slate-100
+  - Close button with hover states
+- **Content**:
+  - Message text: text-slate-300
+  - Bottom margin: mb-6
+- **Actions**:
+  - Button container: flex gap-3 justify-end
+  - Cancel button: bg-slate-700 hover:bg-slate-600
+  - Delete button: bg-red-600 hover:bg-red-700 with hover:scale-105
+  - Both buttons: py-2 px-4 rounded-lg font-medium
+- **Interactions**:
+  - Escape key to close
+  - Backdrop click to close
+  - Body scroll lock when open
+- **Accessibility**:
+  - Proper focus management
+  - ARIA labels for close button
+  - Keyboard navigation support
+
+### Sidebar Chat Items
+
+- **Layout**:
+  - Group container with relative positioning for delete button
+  - Chat button with flex layout and proper spacing
+  - Delete button positioned absolutely in top-right
+- **Delete Button**:
+  - Icon: TrashIcon w-4 h-4
+  - Colors: text-slate-400 hover:text-red-400
+  - Background: hover:bg-slate-700/70
+  - Visibility: opacity-0 group-hover:opacity-100
+  - Positioning: absolute right-2 top-1/2 transform -translate-y-1/2
+  - Padding: p-1.5 rounded-lg
+  - Focus states: focus:opacity-100 focus:ring-2 focus:ring-red-500
+- **Interactions**:
+  - Click stops propagation to prevent chat selection
+  - Hover reveals delete button
+  - Focus makes delete button visible

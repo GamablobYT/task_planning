@@ -12,6 +12,13 @@ const useStore = create(
     role: null,
     csrfToken: null,
 
+    // Settings state
+    systemPrompt: "You are a helpful AI assistant.",
+    temperature: 0.7,
+    maxTokens: 16384,
+    topP: 1.0,
+    minP: 0.0,
+
     addMessage: (message) => {
       set((state) => {
         state.messages.push(message);
@@ -109,7 +116,24 @@ const useStore = create(
       } catch (error) {
         console.error("Failed to fetch chat IDs:", error);
       }
-    }
+    },
+
+    // Settings actions
+    setSystemPrompt: (prompt) => set((state) => {
+      state.systemPrompt = prompt;
+    }),
+    setTemperature: (temp) => set((state) => {
+      state.temperature = temp;
+    }),
+    setMaxTokens: (maxTokens) => set((state) => {
+      state.maxTokens = maxTokens;
+    }),
+    setTopP: (topP) => set((state) => {
+      state.topP = topP;
+    }),
+    setMinP: (minP) => set((state) => {
+      state.minP = minP;
+    }),
   }))
 );
 

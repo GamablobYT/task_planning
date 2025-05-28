@@ -14,8 +14,8 @@ const MessageList = ({ messages }) => {
 
   return (
     <div className="flex-grow p-4 sm:p-6 space-y-4 overflow-y-auto">
-      {messages.map((message) => (
-        <Message message={message} />
+      {messages.map((message, index) => (
+        <Message key={message.id || index} message={message} />
       ))}
       <div ref={messagesEndRef} />
     </div>

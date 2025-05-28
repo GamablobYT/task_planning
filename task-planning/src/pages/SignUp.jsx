@@ -72,6 +72,11 @@ const SignUp = () => {
       if (response.status === 201) {
         // setAuthentication(true);
         setErrors({ success: 'Account created successfully!' });
+
+        // Redirect to login page after successful signup
+        setTimeout(() => {
+          navigate('/login', { replace: true });
+        }, 2000);
       } else {
         setErrors({ failure: 'Signup failed. Please try again.' });
       }
@@ -80,12 +85,6 @@ const SignUp = () => {
       console.error('Signup failed:', error);
     } finally {
       setIsSubmitting(false);
-    }
-
-    if (errors.success) {
-      setTimeout(() => {
-        navigate('/login');
-      }, 2000); // Redirect after 2 seconds
     }
   };
 

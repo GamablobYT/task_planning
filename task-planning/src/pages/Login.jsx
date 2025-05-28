@@ -59,6 +59,8 @@ const Login = () => {
       if (response.status === 200) {
         setAuthentication(true);
         setErrors({ success: "Login successful!" });
+        const csrfToken = await apiService.get('/users/csrf/');
+        useStore.setState({ csrfToken: csrfToken.data.csrfToken });
         setTimeout(() => {
             navigate('/chat');
         }, 1000);

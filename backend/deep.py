@@ -23,7 +23,7 @@ chat_histories = {}
 # Initialize Gemini client once
 gemini_api_token = os.environ.get("GEMINI_API_KEY", "")
 gemini_client = genai.Client(api_key=gemini_api_token)
-gemini_chats = {}  # Store chat sessions by ID
+gemini_chat = None  # global chat
 
 active_chat_history = []
 
@@ -32,7 +32,7 @@ def switch_chat():
     data = request.get_json()
     chat_id = data.get("chat_id")
     
-    # Switch to the specified chat history
+    #remove all chat histories except the active one
     active_chat_history.clear()
     
     return jsonify({"message": "Switched to chat history", "chat_id": chat_id})
@@ -41,10 +41,11 @@ def switch_chat():
 def send_chat_history():
     data = request.get_json()
     history = data.get("messages")
-    print(f"Received chat history: {history}")
+    # print(f"Received chat history: {history}")
 
     # receive the active chat history
     active_chat_history.extend(history)
+    print(len(active_chat_history), "messages in active chat history")
 
     return jsonify({"message": "Chat history received"})
 
@@ -57,11 +58,11 @@ def create_new_chat():
         return jsonify({"error": "Model not supported"}), 400
     
     chat_id = str(uuid.uuid4())
-    chat_histories[chat_id] = []
+    # chat_histories[chat_id] = []
     
     # For Gemini, create and store the chat object
-    if model.split("-")[0] == "gemini":
-        gemini_chats[chat_id] = gemini_client.chats.create(model=model)
+    # if model.split("-")[0] == "gemini":
+        # gemini_chats[chat_id] = gemini_client.chats.create(model=model)
     
     return jsonify({"chat_id": chat_id})
 
@@ -71,6 +72,15 @@ def route_to_model():
     user_message = data.get("message")
     model = data.get("model")
     chat_id = data.get("chat_id")
+    config = {
+        "system_prompt": data.get("system_prompt", ""),
+        "temperature": data.get("temperature", 0.7),
+        "max_tokens": data.get("max_tokens", 16384),
+        "top_p": data.get("top_p", 1.0),
+        "min_p": data.get("min_p", 0.0),
+    }
+
+    print("DEBUGGING LENGTH OF ACTIVE CHAT HISTORY:", len(active_chat_history))
     
     print(f"Received message: {user_message} for model: {model}, chat_id: {chat_id}")
     
@@ -78,20 +88,21 @@ def route_to_model():
         return jsonify({"error": "Model not supported"}), 400
     if not user_message:
         return jsonify({"error": "Message is required"}), 400
-    if not chat_id or chat_id not in chat_histories:
+    # if not chat_id or chat_id not in chat_histories:
         # print(chat_id, "not in ", chat_histories)
-        return jsonify({"error": "Invalid chat ID"}), 400
+        # return jsonify({"error": "Invalid chat ID"}), 400
     
     # Add user message to history
-    chat_histories[chat_id].append({"role": "user", "content": user_message})
+    active_chat_history.append({"role": "system", "content": config.get("system_prompt", "")})
+    active_chat_history.append({"role": "user", "content": user_message})
     
     if model.split("-")[0] == "deepseek":
-        return invoke_chute(user_message, model, chat_id)
+        return invoke_chute(user_message, model, chat_id, config)
     elif model.split("-")[0] == "gemini":
-        return invoke_gemini(user_message, model, chat_id)
+        return invoke_gemini(user_message, model, chat_id, config)
 
 
-def invoke_chute(message, model, chat_id):
+def invoke_chute(message, model, chat_id, config):
     # Get API token from environment variable
     api_token = os.environ.get("CHUTES_API_TOKEN", "")
     
@@ -103,10 +114,12 @@ def invoke_chute(message, model, chat_id):
     # Use the full chat history instead of just the last message
     body = {
         "model": model,
-        "messages": chat_histories[chat_id],
+        "messages": active_chat_history,
         "stream": True,
-        "max_tokens": 16384,
-        "temperature": 0.7
+        "max_tokens": config.get("max_tokens", 16384),
+        "temperature": config.get("temperature", 0.7),
+        "top_p": config.get("top_p", 1.0),
+        "min_p": config.get("min_p", 0.0),
     }
 
     def generate():
@@ -168,19 +181,19 @@ def invoke_chute(message, model, chat_id):
                     
             # After streaming completes, add the full response to chat history
             if full_response:
-                chat_histories[chat_id].append({"role": "assistant", "content": full_response})
+                active_chat_history.append({"role": "assistant", "content": full_response})
         finally:
             loop.close()
     
     return Response(stream_with_context(generate()), content_type='application/json')
 
-def invoke_gemini(message, model, chat_id):
+def invoke_gemini(message, model, chat_id, config):
     def generate():
         full_response = ""
         try:
             # Convert chat history to Google's content format
             history = []
-            for msg in chat_histories[chat_id]:
+            for msg in active_chat_history:
                 # print(msg)
                 role = msg["role"]
                 content = msg["content"]
@@ -189,7 +202,11 @@ def invoke_gemini(message, model, chat_id):
                     role = "model"
 
                 # Skip the current user message since we'll send it separately
-                if role == "user" and content == message and msg == chat_histories[chat_id][-1]:
+                if role == "user" and content == message and msg == active_chat_history[-1]:
+                    continue
+
+                if role == "system":
+                    # System messages are not sent in the chat history
                     continue
                     
                 # Convert to Google's format
@@ -198,29 +215,33 @@ def invoke_gemini(message, model, chat_id):
 
                 history.append(content_entry)
             
-            # Create or get chat session
-            if chat_id in gemini_chats:
-                # Reuse existing chat if available
-                chat = gemini_chats[chat_id]
-                if history:
-                    chat = gemini_client.chats.create(
-                        model=model,
-                        history=history
+            if history:
+                chat = gemini_client.chats.create(
+                    model = model,
+                    history = history,
+                    config= types.GenerateContentConfig(
+                        system_instruction=config.get("system_propmt", ""),
+                        temperature=config.get("temperature", 0.7),
+                        max_output_tokens=config.get("max_tokens", 16384),
+                        top_p=config.get("top_p", 1.0),
                     )
-                gemini_chats[chat_id] = chat
+                )
             else:
-                # Create a new chat with history if we have any
-                if history:
-                    chat = gemini_client.chats.create(
-                        model=model,
-                        history=history
+                chat = gemini_client.chats.create(
+                    model=model,
+                    config = types.GenerateContentConfig(
+                        system_instruction=config.get("system_prompt", ""),
+                        temperature=config.get("temperature", 0.7),
+                        max_output_tokens=config.get("max_tokens", 16384),
+                        top_p=config.get("top_p", 1.0),
                     )
-                else:
-                    chat = gemini_client.chats.create(model=model)
-                gemini_chats[chat_id] = chat
+                )
+            global gemini_chat
+            gemini_chat = chat
             
             # Send message and stream response
-            print(history, message)
+            # print(history, message)
+            print(len(history), "messages in history")
             response = chat.send_message_stream(message=message)
             for chunk in response:
                 if chunk.text:
@@ -229,7 +250,7 @@ def invoke_gemini(message, model, chat_id):
             
             # After streaming completes, add the response to chat history
             if full_response:
-                chat_histories[chat_id].append({"role": "assistant", "content": full_response})
+                active_chat_history.append({"role": "assistant", "content": full_response})
                 
         except Exception as e:
             yield json.dumps({"error": f"Gemini API error: {str(e)}"}) + "\n"

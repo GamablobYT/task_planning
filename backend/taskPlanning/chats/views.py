@@ -9,6 +9,7 @@ from django.middleware.csrf import get_token
 from django.contrib.auth.models import User
 from django.contrib.auth import login, logout
 from .models import Messages
+from django.db.models import Max
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
@@ -24,6 +25,7 @@ def save_chat_history(request):
     user = get_user(request)
     chat_id = data.get("chat_id")
     message = data.get("message")
+    message_id = data.get("message_id")
 
     if not chat_id or not message:
         return JsonResponse({"error": "Chat ID and message are required"}, status=400)
@@ -33,6 +35,7 @@ def save_chat_history(request):
             chat_id=chat_id,
             message=message,
             user=user,
+            message_id=message_id
         )
         chat.save() # Save the message to the database
     except Exception as e:
@@ -62,6 +65,7 @@ def get_chat_history(request, chat_id):
         for chat in chat_history:
             chat_list.append({
                 "message": chat.message,
+                "message_id": str(chat.message_id),
                 "time_sent": chat.time_sent
             })
         return JsonResponse(chat_list, safe=False)
@@ -72,12 +76,42 @@ def get_chat_history(request, chat_id):
 @permission_classes([IsAuthenticated])
 def get_chat_ids(request):
     """
-    Retrieve all chat IDs from the database for a user.
+    Retrieve all chat IDs from the database for a user, ordered by most recent message.
     """
     user = get_user(request)
     try:
-        # Filter chat IDs based on the user
-        chat_ids = Messages.objects.filter(user=user).values_list('chat_id', flat=True).distinct()
+        # Get chat IDs ordered by most recent message time
+        chat_ids = (Messages.objects
+                   .filter(user=user)
+                   .values('chat_id')
+                   .annotate(latest_time=Max('time_sent'))
+                   .order_by('-latest_time')
+                   .values_list('chat_id', flat=True))
         return JsonResponse(list(chat_ids), safe=False)
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
+    
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
+def delete_chat(request, chat_id):
+    """
+    Delete a specific chat by ID.
+    """
+    user = get_user(request)
+
+    try:
+        chat = Messages.objects.filter(chat_id=chat_id, user=user)
+        if not chat.exists():
+            return JsonResponse({"error": "Chat doesn't exist or you don't have access"}, status=404)
+
+        chat.delete()
+        return JsonResponse({"message": "Chat deleted successfully"}, status=200)
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+    
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def validateJSON(request):
+    """
+    Validate provided JSON according to a schema
+    """

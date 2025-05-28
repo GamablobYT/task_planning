@@ -2,21 +2,29 @@ import { use, useEffect, useState } from 'react';
 import Header from '../components/Header';
 import MessageList from '../components/MessageList';
 import ChatInput from '../components/ChatInput';
+import SettingsSidebar from '../components/SettingsSidebar';
 import useStore from '../store/store';
 import { useNavigate} from 'react-router';
 import apiService from '../utils/api';
 
 function ChatPage({ onNewChat }) {
-  const { messages, addMessage, updateMessage, clearMessages, selectedModel, fetchMessagesForID, chats, fetchChatIDs, activeChatID, setActiveChatID } = useStore();
+  const { messages, addMessage, updateMessage, clearMessages, selectedModel, fetchMessagesForID, chats, fetchChatIDs, activeChatID, setActiveChatID, systemPrompt, temperature, maxTokens, topP, minP } = useStore();
   const [inputValue, setInputValue] = useState('');
   const [isBotTyping, setIsBotTyping] = useState(false);
   const [chat_ID, setChatID] = useState(activeChatID || null);
   const [isChatsLoaded, setIsChatsLoaded] = useState(false);
+  const [isSwitchingChat, setIsSwitchingChat] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const navigate = useNavigate();
 
-  //get active chat id from url after /chat/
-  const currentPath = window.location.pathname;
-  setActiveChatID(currentPath.split('/')[2] || null);
+  // Parse URL and set active chat ID
+  useEffect(() => {
+    const currentPath = window.location.pathname;
+    const urlChatID = currentPath.split('/')[2] || null;
+    if (urlChatID !== activeChatID) {
+      setActiveChatID(urlChatID);
+    }
+  }, [window.location.pathname, setActiveChatID]);
 
   useEffect(() => {
     //fetch chats on first load
@@ -31,8 +39,9 @@ function ChatPage({ onNewChat }) {
 
   useEffect(() => {
     //if chatid changed, clear messages, get messages
+    if (isSwitchingChat) return; // Prevent duplicate calls
+    
     clearMessages();
-    // console.log("Active chat ID", activeChatID);
     setChatID(activeChatID);
     // Call Flask switch-chat API instead of fetchMessagesForID
     switchToChat(activeChatID);
@@ -50,10 +59,13 @@ function ChatPage({ onNewChat }) {
 
   // Add this new function to handle chat switching
   const switchToChat = async (chatId) => {
-    if (!chatId) {
-      //initial load, no chat ID
+    if (!chatId || isSwitchingChat) {
+      //initial load, no chat ID or already switching
       return;
     }
+    
+    setIsSwitchingChat(true);
+    
     try {
       const response = await fetch('http://127.0.0.1:5000/switch-chat', {
         method: 'POST',
@@ -79,19 +91,76 @@ function ChatPage({ onNewChat }) {
         //   });
         // });
 
+        const flaskHistory = [];
+        
+        if (Array.isArray(data2)) {
+          for (const msg of data2) {
+            const message = msg.message;
+            flaskHistory.push({
+              role: message.role,
+              content: message.content
+            })
+          }
+        }
+
+        try {
+          const sendingHistory = await fetch('http://127.0.0.1:5000/send-chat-history', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({messages: flaskHistory})
+          });
+        } catch (error) {
+          console.error("Error sending chat history to Flask:", error);
+          throw new Error("Failed to send chat history to Flask: " + error.message);
+        }
+
         if (response2.data.error && response2.data.error === "Chat doesn't exist or has no messages") {
           console.warn("No messages found for this chat ID:", chatId);
           return; // No messages to process
         }
 
-        for (const msg of data2) {
-          const message = msg.message;
-          addMessage({
-            id: Date.now() + Math.random(), // Use random to avoid collisions
-            content: message.content,
-            role: message.role === 'assistant' ? 'bot' : message.role,
-            isTyping: false
-          });
+        if (typeof data2 === 'object') {
+          for (const msg of data2) {
+            const message = msg.message;
+            addMessage({
+              id: message.message_id,
+              content: message.content,
+              role: message.role === 'assistant' ? 'bot' : message.role,
+              time: Date.now(),
+              isTyping: false
+            });
+          }
+
+          if (data2.length > 1 && data2[data2.length - 1].message.role !== 'assistant') {
+            // if last message not from bot that means last request wasn't completed fully
+            try {
+              const response = await apiService.post('chats/save-chat/', {
+                chat_id: chat_ID,
+                message: {
+                  role: 'assistant',
+                  content: 'The last request was not completed. Please try again.'
+                },
+                message_id: crypto.randomUUID() // Use uuid4 for unique ID
+              });
+            }
+            catch (error) {
+              console.error("Error saving message:", error);
+              throw new Error("Failed to save user message: " + error.message);
+            }
+  
+            addMessage({
+              id: crypto.randomUUID(), //uuid4
+              content: 'The last request was not completed. Please try again.',
+              role: 'bot',
+              isTyping: false,
+              time: Date.now()
+            })
+          }
+          // else {
+          //   console.log("last message: ", data2[data2.length - 1].message.role);
+          // }
         }
 
         // console.log("Fetched messages: ", useStore.getState().messages);
@@ -101,10 +170,15 @@ function ChatPage({ onNewChat }) {
       }
     } catch (error) {
       console.error('Error switching chat:', error);
+    } finally {
+      setIsSwitchingChat(false);
     }
   };
 
-  const sendMessageToServer = async (message) => {
+  const sendMessageToServer = async (message, id) => {
+    // Create a unique ID for the bot response message
+    const botResponseId = crypto.randomUUID(); // Use uuid4 for unique ID
+
     try {
       // Variable to hold the active chat ID for this request
       let activeChatID = chat_ID;
@@ -113,35 +187,41 @@ function ChatPage({ onNewChat }) {
       if (!activeChatID) {
         if (onNewChat) {
           const newChatID = await onNewChat();
-          // console.log("Created new chat ID:", newChatID);
+          console.log("Created new chat ID:", newChatID);
           
           // Store the new ID in our variable for immediate use
           activeChatID = newChatID;
           
-          // Also update the state for future requests
+          // Update the state immediately
+          setActiveChatID(newChatID);
           setChatID(newChatID);
           
           // Navigate with the new ID
-          navigate(`/chat/${newChatID}`);
+          navigate(`/chat/${newChatID}`, { replace: true });
+          
+          // Wait for state updates to propagate
+          await new Promise(resolve => setTimeout(resolve, 300));
         } else {
           throw new Error("Unable to create new chat");
         }
       } else {
         console.log("Using existing Chat ID:", activeChatID);
-        navigate(`/chat/${activeChatID}`);
+        // Ensure we're on the correct URL
+        const currentPath = window.location.pathname;
+        const urlChatID = currentPath.split('/')[2] || null;
+        if (urlChatID !== activeChatID) {
+          navigate(`/chat/${activeChatID}`);
+        }
       }
 
-      // Create a unique ID for the bot response message
-      const botResponseId = Date.now() + 1;
-      
-      // Add a bot message with a typing indicator
-      addMessage({
-        id: botResponseId,
-        content: '',
-        role: 'bot',
-        isTyping: true
-      });
-
+      // Now add the user message
+      const newUserMessage = {
+        id: id,
+        content: message,
+        role: 'user',
+        time: Date.now()
+      };
+      addMessage(newUserMessage);
 
       try {
         const sendingMessageResponse = await apiService.post('chats/save-chat/', {
@@ -149,12 +229,25 @@ function ChatPage({ onNewChat }) {
           message: {
             role: 'user',
             content: message
-          }
+          },
+          message_id: id
         });
       } catch (error) {
         console.error("Error saving user message:", error);
         throw new Error("Failed to save user message: " + error.message);
       }
+
+      // Small delay to ensure user message is rendered
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      // Add a bot message with a typing indicator
+      addMessage({
+        id: botResponseId,
+        content: '',
+        role: 'bot',
+        isTyping: true,
+        time: Date.now()
+      });
 
       // Use fetch for streaming - with the activeChatID
       const response = await fetch('http://127.0.0.1:5000/chat', {
@@ -165,7 +258,12 @@ function ChatPage({ onNewChat }) {
         body: JSON.stringify({
           message: message,
           model: selectedModel,
-          chat_id: activeChatID  // Use the active ID, not the state variable
+          chat_id: activeChatID,  // Use the active ID, not the state variable
+          system_prompt: systemPrompt,
+          temperature: temperature,
+          max_tokens: maxTokens,
+          top_p: topP,
+          min_p: minP
         })
       });
       
@@ -190,7 +288,8 @@ function ChatPage({ onNewChat }) {
             message: {
               role: 'assistant',
               content: accumulatedText
-            }
+            },
+            message_id: botResponseId
           });
         } catch (error) {
           console.error("Error saving bot response:", error);
@@ -242,10 +341,11 @@ function ChatPage({ onNewChat }) {
       
       // Add error message
       addMessage({
-        id: Date.now() + 1,
+        id: crypto.randomUUID(), // Use uuid4 for unique ID
         content: "Sorry, I'm having trouble connecting to the server right now.",
         role: 'bot',
-        isTyping: false
+        isTyping: false,
+        time: Date.now()
       });
       
       return { success: false };
@@ -255,17 +355,14 @@ function ChatPage({ onNewChat }) {
   const handleSendMessage = async () => {
     if (inputValue.trim() === '') return;
 
-    const newUserMessage = {
-      id: Date.now(),
-      content: inputValue,
-      role: 'user',
-    };
-    addMessage(newUserMessage);
+    const messageID = crypto.randomUUID(); // Use uuid4 for unique ID
+    const messageContent = inputValue;
+
     setInputValue('');
     setIsBotTyping(true);
 
     try {
-      await sendMessageToServer(inputValue);
+      await sendMessageToServer(messageContent, messageID);
     } catch (error) {
       console.error("Error in handleSendMessage:", error);
     } finally {
@@ -274,14 +371,52 @@ function ChatPage({ onNewChat }) {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-gradient-to-br from-slate-900 to-slate-800 text-slate-100 font-sans">
-      <Header />
-      <MessageList messages={messages} />
-      <ChatInput 
-        inputValue={inputValue} 
-        setInputValue={setInputValue} 
-        handleSendMessage={handleSendMessage} 
-      />
+    <div className="flex h-full bg-gradient-to-br from-slate-900 to-slate-800 text-slate-100 font-sans">
+      {/* Main Chat Content */}
+      <div className="flex flex-col flex-1 transition-all duration-300 ease-in-out">
+        <Header />
+        <MessageList messages={messages} />
+        <ChatInput 
+          inputValue={inputValue} 
+          setInputValue={setInputValue} 
+          handleSendMessage={handleSendMessage} 
+        />
+        
+        {/* Floating Settings Button */}
+        <button
+          onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+          className="fixed right-6 top-2 z-30 bg-slate-700/70 backdrop-blur-sm text-slate-100 
+                     border border-slate-600/80 rounded-full p-3
+                     hover:bg-slate-700/90 hover:border-slate-500 hover:scale-105
+                     focus:outline-none focus:ring-2 focus:ring-sky-500/70
+                     transition-all duration-200 ease-in-out shadow-lg"
+          aria-label="Open settings"
+          title="Settings"
+        >
+          <svg 
+            className="w-5 h-5" 
+            fill="none" 
+            stroke="currentColor" 
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="2"
+              d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+            />
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="2"
+              d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+            />
+          </svg>
+        </button>
+      </div>
+      
+      {/* Settings Sidebar */}
+      <SettingsSidebar isOpen={isSidebarOpen} setIsOpen={setIsSidebarOpen} />
     </div>
   );
 }

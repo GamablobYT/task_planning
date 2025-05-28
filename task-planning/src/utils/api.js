@@ -9,9 +9,29 @@ const apiClient = axios.create({
   }
 });
 
+function getCookie(name) {
+  // document.cookie is a single string like:
+  // "csrftoken=ABC123; sessionid=XYZ789; theme=dark"
+  const value = `; ${document.cookie}`;  
+  // → "; csrftoken=ABC123; sessionid=XYZ789; theme=dark"
+  
+  // We split on `; name=` so if name="csrftoken" we end up with:
+  // ["; ", "ABC123; sessionid=XYZ789; theme=dark"]
+  const parts = value.split(`; ${name}=`);
+  
+  if (parts.length === 2) {
+    // parts.pop() gives "ABC123; sessionid=XYZ789; theme=dark"
+    // .split(';').shift() grabs just "ABC123"
+    return parts.pop().split(';').shift();
+  }
+  // if parts.length !== 2, cookie isn’t set
+  return undefined;
+}
+
+
 apiClient.interceptors.request.use(async (config) => {
     // Always fetch the latest CSRF token from Zustand store
-    const csrfToken = useStore.getState().csrfToken;
+    const csrfToken = getCookie('csrfToken') || useStore.getState().csrfToken;
     
     if (csrfToken && typeof csrfToken === 'string') {
       config.headers['X-CSRFToken'] = csrfToken; // Correct header name

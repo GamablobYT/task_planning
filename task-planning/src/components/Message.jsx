@@ -43,6 +43,9 @@ const Message = ({ message }) => {
   
   const { regularText, thinkingText } = parseThinkingContent(content);
   
+  // Check if assistant message is empty
+  const isEmptyAssistantMessage = role === 'bot' && !regularText && !thinkingText && !isTyping;
+  
   // Function to handle copying code to clipboard
   const copyToClipboard = (code) => {
     navigator.clipboard.writeText(code).catch(err => {
@@ -107,7 +110,7 @@ const Message = ({ message }) => {
         </div>
       )}
 
-      {regularText && (
+      {(regularText || isEmptyAssistantMessage) && (
         <div
           className={`flex animate-fadeInUp ${
             role === 'user' ? 'justify-end' : 'justify-start'
@@ -121,36 +124,40 @@ const Message = ({ message }) => {
             }`}
           >
             <div className="markdown text-sm">
-              <Markdown
-                components={{
-                  h1: ({node, ...props}) => <h1 className="text-xl font-bold" {...props} />,
-                  h2: ({node, ...props}) => <h2 className="text-lg font-bold" {...props} />,
-                  h3: ({node, ...props}) => <h3 className="text-md font-bold" {...props} />,
-                  strong: ({node, ...props}) => <strong className="font-bold" {...props} />,
-                  b: ({node, ...props}) => <b className="font-bold" {...props} />,
-                  p: ({node, ...props}) => <p className="leading-relaxed" {...props} />,
-                  pre: ({node, children, ...props}) => {
-                    const code = node.children[0].children[0]?.value || '';
-                    return (
-                      <div className="code-block-container">
-                        <button 
-                          className="copy-code-button"
-                          onClick={() => copyToClipboard(code)}
-                          aria-label="Copy code"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-                            <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/>
-                            <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/>
-                          </svg>
-                        </button>
-                        <pre {...props}>{children}</pre>
-                      </div>
-                    );
-                  }
-                }}
-              >
-                {regularText}
-              </Markdown>
+              {isEmptyAssistantMessage ? (
+                <p className="leading-relaxed text-slate-400 italic">Model didn't reply</p>
+              ) : (
+                <Markdown
+                  components={{
+                    h1: ({node, ...props}) => <h1 className="text-xl font-bold" {...props} />,
+                    h2: ({node, ...props}) => <h2 className="text-lg font-bold" {...props} />,
+                    h3: ({node, ...props}) => <h3 className="text-md font-bold" {...props} />,
+                    strong: ({node, ...props}) => <strong className="font-bold" {...props} />,
+                    b: ({node, ...props}) => <b className="font-bold" {...props} />,
+                    p: ({node, ...props}) => <p className="leading-relaxed" {...props} />,
+                    pre: ({node, children, ...props}) => {
+                      const code = node.children[0].children[0]?.value || '';
+                      return (
+                        <div className="code-block-container">
+                          <button 
+                            className="copy-code-button"
+                            onClick={() => copyToClipboard(code)}
+                            aria-label="Copy code"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                              <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/>
+                              <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/>
+                            </svg>
+                          </button>
+                          <pre {...props}>{children}</pre>
+                        </div>
+                      );
+                    }
+                  }}
+                >
+                  {regularText}
+                </Markdown>
+              )}
             </div>
           </div>
         </div>

@@ -10,6 +10,7 @@ import ProtectedRoute from './utils/ProtectedRoute';
 import apiService from './utils/api';
 
 import useStore from './store/store';
+import { useNavigate } from 'react-router-dom';
 
 function App() {
   const {selectedModel, chats, setChats, activeChatID, setActiveChatID} = useStore();
@@ -72,7 +73,13 @@ function App() {
       title: "New Chat"
     };
     
-    setChats([newChat, ...chats]);
+    // Update the store with the new chat
+    const updatedChats = [newChat, ...chats];
+    setChats(updatedChats);
+    
+    // Set the new chat as active immediately
+    setActiveChatID(newChat.id);
+    
     return newChat.id;
   };
 
@@ -86,10 +93,10 @@ function App() {
         {isChatPage && <Sidebar chats={chats} onNewChat={handleNewChat} />}
         <div className="flex-1 overflow-hidden">
           <Routes>
-            <Route path="/" element={<Navigate to="/signup" replace />} />
+            <Route path="/" element={isAuthenticated ? <Navigate to="/chat" /> : <Navigate to="/signup" replace />} />
             <Route path='*' element={isAuthenticated ? <Navigate to="/chat" /> : <Navigate to="/signup" />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/signup" element={<SignUp />} />
+            <Route path="/login" element={isAuthenticated ? <Navigate to='/chat' /> : <Login />} />
+            <Route path="/signup" element={isAuthenticated ? <Navigate to='chat' /> : <SignUp />} />
             <Route element={<ProtectedRoute />} >
               <Route path="/chat/:chatId?" element={<ChatPage onNewChat={handleNewChat} />} />
             </Route>

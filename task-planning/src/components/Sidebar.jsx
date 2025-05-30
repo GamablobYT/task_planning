@@ -47,6 +47,7 @@ const Sidebar = ({ chats = [], onNewChat }) => {
   const handleDeleteConfirm = async () => {
     if (deleteModal.chatId) {
       await apiService.delete(`/chats/delete-chat/${deleteModal.chatId}/`);
+      setActiveChatID(null); // Clear active chat ID
       await fetchChatIDs(); // Refresh chat list after deletion
       // If we're currently viewing the deleted chat, navigate to home
       if (location.pathname === `/chat/${deleteModal.chatId}`) {

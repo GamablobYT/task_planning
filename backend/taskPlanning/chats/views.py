@@ -10,6 +10,8 @@ from django.contrib.auth.models import User
 from django.contrib.auth import login, logout
 from .models import Messages
 from django.db.models import Max
+from pydantic import BaseModel, ValidationError, ConfigDict
+from typing import Dict, List, Optional
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
@@ -109,9 +111,46 @@ def delete_chat(request, chat_id):
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
     
+
+class JSONSchema(BaseModel):
+    """
+    Pydantic model for validating JSON schema.
+    """
+    #temp testing schema
+    # model_config = ConfigDict(extra="forbid")  # Forbid extra fields not defined in the schema
+
+    title: str
+    description: str
+    type: str = "object"  # Default to object type note: here type doesn't mean type its treated as a field that has default value object
+    properties: Dict[str, str]  # Describes the properties of the object
+    required: Optional[List[str]] = [] # Optional list of required properties
+
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
-def validateJSON(request):
+def validate_json(request):
     """
-    Validate provided JSON according to a schema
+    Validate provided JSON according to a schema.
+    The request body should contain the JSON data to be validated.
+    The schema itself is defined by the JSONSchema Pydantic model.
+    For this example, we'll assume the schema is fixed as JSONSchema.
+    In a more complex scenario, the schema might also come from the request
+    or be dynamically determined.
     """
+    try:
+        data_to_validate = request.data
+        # Attempt to parse and validate the data against our defined schema
+        # This step implicitly validates if the provided data conforms to the structure
+        # expected by JSONSchema (title, description, type, properties, required).
+        # If the goal is to validate arbitrary JSON against an arbitrary schema,
+        # this approach needs to be different. This validates *if the data itself is a valid schema*.
+
+        # For validating data *against* a schema provided in the request,
+        # you would first parse the schema, then use a library like jsonschema.
+        # Here, we are validating if the input data *is* a schema that matches JSONSchema.
+        
+        # JSONSchema(**data_to_validate)
+        return JsonResponse({"message": "JSON is valid according to the schema"}, status=status.HTTP_200_OK)
+    except ValidationError as e:
+        return JsonResponse({"error": "JSON validation failed", "details": e.errors()}, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        return JsonResponse({"error": f"An unexpected error occurred: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

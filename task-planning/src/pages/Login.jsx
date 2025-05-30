@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import apiService from '../utils/api';
 
 const Login = () => {
-  const { setAuthentication } = useStore();
+  const { setAuthentication, setActiveChatID } = useStore();
   const navigate = useNavigate();
 
   const [formData, setFormData] = useState({
@@ -61,6 +61,7 @@ const Login = () => {
         setErrors({ success: "Login successful!" });
         const csrfToken = await apiService.get('/users/csrf/');
         useStore.setState({ csrfToken: csrfToken.data.csrfToken });
+        setActiveChatID(null); // Clear active chat ID on login
         setTimeout(() => {
             navigate('/chat');
         }, 1000);

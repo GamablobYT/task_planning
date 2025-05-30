@@ -247,3 +247,31 @@ This document outlines the design aesthetics and expectations for components in 
   - Click stops propagation to prevent chat selection
   - Hover reveals delete button
   - Focus makes delete button visible
+
+### Error Toast / Notification
+
+- **Purpose**: Displays transient error messages, such as JSON validation failures from the backend.
+- **Positioning**:
+  - Fixed to the viewport, typically in the top-right corner (e.g., `top-4 right-4`).
+  - High z-index (e.g., `z-[100]`) to appear above other content.
+- **Visual Design**:
+  - Background: Error-indicating color (e.g., `bg-red-600`).
+  - Text Color: Contrasting color for readability (e.g., `text-white`).
+  - Padding: Adequate padding for content (e.g., `p-4`).
+  - Corners: Rounded (e.g., `rounded-lg`).
+  - Shadow: Subtle shadow for depth (e.g., `shadow-xl`).
+  - Max Width: To prevent overly wide toasts on large screens (e.g., `max-w-md`).
+- **Content**:
+  - Title/Header: Bold text indicating the type of message (e.g., "Validation Error").
+  - Message Body: Detailed error information.
+  - Close Button: Allows users to dismiss the toast manually.
+- **Animation**:
+  - Slide-in: From the right or top (e.g., `transform translateX(100%) to translateX(0)`).
+  - Duration: Quick and smooth (e.g., `300ms ease-in-out`).
+  - Slide-out: Can be the reverse of slide-in or a fade-out.
+- **Behavior**:
+  - Auto-dismiss: Automatically hides after a set duration (e.g., 5 seconds).
+  - Manual Dismiss: Can be closed by clicking a close icon.
+- **Accessibility**:
+  - `role="alert"` for assertive announcements to screen readers.
+  - `aria-label` for close button.

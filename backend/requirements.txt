@@ -5,3 +5,4 @@ asyncio
 requests
 google-genai
 python-dotenv
+pydantic

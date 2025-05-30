@@ -8,7 +8,7 @@ import { useNavigate} from 'react-router';
 import apiService from '../utils/api';
 
 function ChatPage({ onNewChat }) {
-  const { messages, addMessage, updateMessage, clearMessages, selectedModel, fetchMessagesForID, chats, fetchChatIDs, activeChatID, setActiveChatID, systemPrompt, temperature, maxTokens, topP, minP } = useStore();
+  const { messages, addMessage, updateMessage, clearMessages, models, fetchMessagesForID, chats, fetchChatIDs, activeChatID, setActiveChatID } = useStore();
   const [inputValue, setInputValue] = useState('');
   const [isBotTyping, setIsBotTyping] = useState(false);
   const [chat_ID, setChatID] = useState(activeChatID || null);
@@ -176,9 +176,9 @@ function ChatPage({ onNewChat }) {
   };
 
   const sendMessageToServer = async (message, id) => {
-    // Create a unique ID for the bot response message
-    const botResponseId = crypto.randomUUID(); // Use uuid4 for unique ID
-
+    // Get the number of models
+    const numberOfModels = models.length;
+    
     try {
       // Variable to hold the active chat ID for this request
       let activeChatID = chat_ID;
@@ -240,10 +240,15 @@ function ChatPage({ onNewChat }) {
       // Small delay to ensure user message is rendered
       await new Promise(resolve => setTimeout(resolve, 100));
 
-      // Add a bot message with a typing indicator
+      // Create only the first bot message initially
+      const botMessageIds = [];
+      const firstBotResponseId = crypto.randomUUID();
+      botMessageIds.push(firstBotResponseId);
+      
+      const firstModelName = models[0]?.name || 'Model 1';
       addMessage({
-        id: botResponseId,
-        content: '',
+        id: firstBotResponseId,
+        content: `**${firstModelName}:**\n`,
         role: 'bot',
         isTyping: true,
         time: Date.now()
@@ -257,13 +262,8 @@ function ChatPage({ onNewChat }) {
         },
         body: JSON.stringify({
           message: message,
-          model: selectedModel,
-          chat_id: activeChatID,  // Use the active ID, not the state variable
-          system_prompt: systemPrompt,
-          temperature: temperature,
-          max_tokens: maxTokens,
-          top_p: topP,
-          min_p: minP
+          model: models,
+          chat_id: activeChatID
         })
       });
       
@@ -274,7 +274,12 @@ function ChatPage({ onNewChat }) {
       // Get a reader from the response body stream
       const reader = response.body.getReader();
       const decoder = new TextDecoder('utf-8');
-      let accumulatedText = '';
+      let currentModelIndex = 0;
+      let accumulatedTexts = new Array(numberOfModels).fill('');
+      
+      // Initialize the first bot message content with model name
+      const firstModelNameText = models[0]?.name || 'Model 1';
+      accumulatedTexts[0] = `**${firstModelNameText}:**\n`;
       
       // Process the stream chunk by chunk
       while (true) {
@@ -282,18 +287,22 @@ function ChatPage({ onNewChat }) {
         
         if (done) {
           console.log("Stream complete");
-          try {
-          const response = await apiService.post('chats/save-chat/', {
-            chat_id: activeChatID,
-            message: {
-              role: 'assistant',
-              content: accumulatedText
-            },
-            message_id: botResponseId
-          });
-        } catch (error) {
-          console.error("Error saving bot response:", error);
-        }
+          
+          // Save all bot responses that were created
+          for (let i = 0; i < botMessageIds.length; i++) {
+            try {
+              const response = await apiService.post('chats/save-chat/', {
+                chat_id: activeChatID,
+                message: {
+                  role: 'assistant',
+                  content: accumulatedTexts[i]
+                },
+                message_id: botMessageIds[i]
+              });
+            } catch (error) {
+              console.error(`Error saving bot response ${i}:`, error);
+            }
+          }
           break;
         }
         
@@ -312,19 +321,60 @@ function ChatPage({ onNewChat }) {
             
             if (parsedData.error) {
               console.error("Error from server:", parsedData.error);
-              updateMessage(botResponseId, { 
-                content: "Sorry, an error occurred: " + parsedData.error, 
-                isTyping: false 
-              });
+              if (currentModelIndex < botMessageIds.length) {
+                updateMessage(botMessageIds[currentModelIndex], { 
+                  content: accumulatedTexts[currentModelIndex] + "Sorry, an error occurred: " + parsedData.error, 
+                  isTyping: false 
+                });
+              }
             } else if (parsedData.content) {
-              // Add new content to the accumulated text
-              accumulatedText += parsedData.content;
+              // Check if this is a model separator (indicating next model response)
+              if (parsedData.content.includes('--- Response from ') && parsedData.content.includes(' ---')) {
+                console.log("Model separator detected, switching to next model");
+                
+                // Finish the current model
+                if (currentModelIndex < botMessageIds.length) {
+                  updateMessage(botMessageIds[currentModelIndex], { 
+                    content: accumulatedTexts[currentModelIndex], 
+                    isTyping: false 
+                  });
+                }
+                
+                // Move to next model
+                currentModelIndex++;
+                if (currentModelIndex < numberOfModels) {
+                  console.log(`Switching to model ${currentModelIndex}`);
+                  
+                  // Create the next bot message
+                  const nextBotResponseId = crypto.randomUUID();
+                  botMessageIds.push(nextBotResponseId);
+                  
+                  const nextModelName = models[currentModelIndex]?.name || `Model ${currentModelIndex + 1}`;
+                  accumulatedTexts[currentModelIndex] = `**${nextModelName}:**\n`;
+                  
+                  addMessage({
+                    id: nextBotResponseId,
+                    content: accumulatedTexts[currentModelIndex],
+                    role: 'bot',
+                    isTyping: true,
+                    time: Date.now()
+                  });
+                } else {
+                  console.log("All models processed");
+                }
+                continue;
+              }
               
-              // Force immediate update to show streaming effect
-              updateMessage(botResponseId, { 
-                content: accumulatedText, 
-                isTyping: true 
-              });
+              // Add new content to the current model's accumulated text
+              if (currentModelIndex < numberOfModels && currentModelIndex < botMessageIds.length) {
+                accumulatedTexts[currentModelIndex] += parsedData.content;
+                
+                // Force immediate update to show streaming effect
+                updateMessage(botMessageIds[currentModelIndex], { 
+                  content: accumulatedTexts[currentModelIndex], 
+                  isTyping: true 
+                });
+              }
             }
           } catch (error) {
             console.error("Error parsing JSON:", error, "Raw line:", line);
@@ -332,8 +382,10 @@ function ChatPage({ onNewChat }) {
         }
       }
       
-      // Once stream is complete, remove typing indicator
-      updateMessage(botResponseId, { isTyping: false });
+      // Once stream is complete, remove typing indicator from all bot messages
+      for (let i = 0; i < botMessageIds.length; i++) {
+        updateMessage(botMessageIds[i], { isTyping: false });
+      }
       
       return { success: true };
     } catch (error) {

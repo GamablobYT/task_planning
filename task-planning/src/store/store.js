@@ -5,19 +5,25 @@ import apiService from "../utils/api";
 const useStore = create(
   immer((set) => ({
     messages: [],
-    selectedModel: "deepseek-ai/DeepSeek-R1",
     chats: [],
     activeChatID: null,
     isAuthenticated: null,
     role: null,
     csrfToken: null,
 
-    // Settings state
-    systemPrompt: "You are a helpful AI assistant.",
-    temperature: 0.7,
-    maxTokens: 16384,
-    topP: 1.0,
-    minP: 0.0,
+    // Unified models array with settings
+    models: [
+      {
+        id: 0,
+        name: "DeepSeek R1",
+        value: "deepseek-ai/DeepSeek-R1-0528",
+        systemPrompt: "You are a helpful AI assistant.",
+        temperature: 0.7,
+        maxTokens: 16384,
+        topP: 1.0,
+        minP: 0.0
+      }
+    ],
 
     addMessage: (message) => {
       set((state) => {
@@ -46,21 +52,51 @@ const useStore = create(
       });
     },
 
-    setModel: (model) => {
+    addModel: () => {
       set((state) => {
-        state.selectedModel = model;
+        const newId = Math.max(...state.models.map(m => m.id)) + 1;
+        state.models.push({
+          id: newId,
+          name: "New Model",
+          value: "deepseek-ai/DeepSeek-R1-0528",
+          systemPrompt: "You are a helpful AI assistant.",
+          temperature: 0.7,
+          maxTokens: 16384,
+          topP: 1.0,
+          minP: 0.0
+        });
       });
     },
 
-    setChats: (chats) => {
+    removeModel: (modelId) => {
       set((state) => {
-        state.chats = chats;
+        if (state.models.length > 1) {
+          const modelIndex = state.models.findIndex(m => m.id === modelId);
+          if (modelIndex !== -1) {
+            state.models.splice(modelIndex, 1);
+          }
+        }
+      });
+    },
+
+    updateModelSetting: (modelId, setting, value) => {
+      set((state) => {
+        const model = state.models.find(m => m.id === modelId);
+        if (model) {
+          model[setting] = value;
+        }
       });
     },
 
     setActiveChatID: (chatID) => {
       set((state) => {
         state.activeChatID = chatID;
+      })
+    },
+
+    setChats: (chats) => {
+      set((state) => {
+        state.chats = chats;
       });
     },
 
@@ -118,21 +154,42 @@ const useStore = create(
       }
     },
 
-    // Settings actions
+    // Remove old model selection and active model logic
+    // Keep backward compatibility getters for first model (or provide default values)
+    get selectedModel() {
+      return this.models[0]?.value || "deepseek-ai/DeepSeek-R1-0528";
+    },
+    get systemPrompt() {
+      return this.models[0]?.systemPrompt || "You are a helpful AI assistant.";
+    },
+    get temperature() {
+      return this.models[0]?.temperature || 0.7;
+    },
+    get maxTokens() {
+      return this.models[0]?.maxTokens || 16384;
+    },
+    get topP() {
+      return this.models[0]?.topP || 1.0;
+    },
+    get minP() {
+      return this.models[0]?.minP || 0.0;
+    },
+
+    // Legacy setters for backward compatibility (updates first model)
     setSystemPrompt: (prompt) => set((state) => {
-      state.systemPrompt = prompt;
+      if (state.models[0]) state.models[0].systemPrompt = prompt;
     }),
     setTemperature: (temp) => set((state) => {
-      state.temperature = temp;
+      if (state.models[0]) state.models[0].temperature = temp;
     }),
     setMaxTokens: (maxTokens) => set((state) => {
-      state.maxTokens = maxTokens;
+      if (state.models[0]) state.models[0].maxTokens = maxTokens;
     }),
     setTopP: (topP) => set((state) => {
-      state.topP = topP;
+      if (state.models[0]) state.models[0].topP = topP;
     }),
     setMinP: (minP) => set((state) => {
-      state.minP = minP;
+      if (state.models[0]) state.models[0].minP = minP;
     }),
   }))
 );

@@ -176,6 +176,52 @@ function ChatPage({ onNewChat }) {
     }
   };
 
+  const chatNameHandling = async (message, id) => {
+    try {
+      // First check if chat already has a proper name
+      const currentChat = chats.find(chat => chat.chat_id === id);
+      if (currentChat && currentChat.chat_name && 
+          currentChat.chat_name !== "Untitled Chat" && 
+          currentChat.chat_name !== "New Chat") {
+        return; // Chat already has a proper name
+      }
+
+      const response = await fetch(`http://127.0.0.1:5000/get-chat-name`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          message: message,
+        })
+      });
+
+      if (!response.ok) {
+        console.error("Failed to get chat name");
+        return;
+      }
+
+      const data = await response.json();
+      const name = data.chat_name;
+
+      if (name) {
+        const settingNameResponse = await apiService.put(`chats/save-chat-name/${id}/`, {
+          chat_name: name
+        });
+        
+        if (settingNameResponse.status === 200) {
+          console.log("Chat name updated successfully");
+          // Refresh the chat list to show the new name
+          fetchChatIDs();
+        } else {
+          console.error("Failed to save chat name");
+        }
+      }
+    } catch (error) {
+      console.error("Error in chatNameHandling:", error);
+    }
+  }
+
   const sendMessageToServer = async (message, id) => {
     // Get the number of models
     const numberOfModels = models.length;
@@ -183,6 +229,7 @@ function ChatPage({ onNewChat }) {
     try {
       // Variable to hold the active chat ID for this request
       let activeChatID = chat_ID;
+      let isNewChat = false;
 
       // If no chat ID exists, create a new chat
       if (!activeChatID) {
@@ -192,6 +239,7 @@ function ChatPage({ onNewChat }) {
           
           // Store the new ID in our variable for immediate use
           activeChatID = newChatID;
+          isNewChat = true;
           
           // Update the state immediately
           setActiveChatID(newChatID);
@@ -304,6 +352,12 @@ function ChatPage({ onNewChat }) {
               console.error(`Error saving bot response ${i}:`, error);
             }
           }
+
+          // Handle chat naming for new chats or chats without proper names
+          if (isNewChat || shouldUpdateChatName(activeChatID)) {
+            await chatNameHandling(message, activeChatID);
+          }
+
           break;
         }
         
@@ -403,6 +457,15 @@ function ChatPage({ onNewChat }) {
       
       return { success: false };
     }
+  };
+
+  // Helper function to check if chat name should be updated
+  const shouldUpdateChatName = (chatId) => {
+    const currentChat = chats.find(chat => chat.chat_id === chatId);
+    if (!currentChat) return true;
+    
+    const chatName = currentChat.chat_name;
+    return !chatName || chatName === "Untitled Chat" || chatName === "New Chat";
   };
 
   const handleSendMessage = async () => {

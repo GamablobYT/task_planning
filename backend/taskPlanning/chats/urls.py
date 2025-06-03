@@ -7,4 +7,5 @@ urlpatterns = [
     path('get-chat-ids/', views.get_chat_ids, name='get_chat_ids'),
     path('delete-chat/<str:chat_id>/', views.delete_chat, name='delete_chat'),
     path('validate-json/', views.validate_json, name='validate_json'),
+    path('save-chat-name/<str:chat_id>/', views.set_chat_name, name='set_chat_name'),
 ]

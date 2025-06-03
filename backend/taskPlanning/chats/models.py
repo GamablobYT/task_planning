@@ -16,3 +16,16 @@ class Messages(models.Model):
 
     def __str__(self):
         return f"Chat {self.message} for id:{self.chat_id}"
+
+class Chats(models.Model):
+    """
+    Model to store chat metadata like name, user
+    """
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    chat_id = models.UUIDField(unique=True)  # Store chat_id directly
+    chat_name = models.CharField(max_length=255, blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Chat {self.chat_name or self.chat_id} for {self.user.username}"

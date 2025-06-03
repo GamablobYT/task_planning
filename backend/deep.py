@@ -49,6 +49,22 @@ def send_chat_history():
 
     return jsonify({"message": "Chat history received"})
 
+@app.route("/get-chat-name", methods=["POST"])
+def get_chat_name():
+    data = request.get_json()
+    print(data)
+    prompt = data.get("message")
+    model = "gemini-2.5-flash-preview-05-20"
+    response = gemini_client.models.generate_content(
+        model=model,
+        config= types.GenerateContentConfig(
+            system_instruction="Your job is to create a small 4-5 word Chat Title based on the prompt"
+        ),
+        contents=prompt
+    )
+    
+    return jsonify({"chat_name": response.text})
+
 @app.route("/new-chat", methods=["POST"])
 def create_new_chat():
     data = request.get_json()

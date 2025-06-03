@@ -8,7 +8,7 @@ from rest_framework import status
 from django.middleware.csrf import get_token
 from django.contrib.auth.models import User
 from django.contrib.auth import login, logout
-from .models import Messages
+from .models import Messages, Chats
 from django.db.models import Max
 from pydantic import BaseModel, ValidationError, ConfigDict
 from typing import Dict, List, Optional
@@ -19,27 +19,32 @@ def save_chat_history(request):
     """
     Save chat history to the database.
     """
-    #user = get_user(request)
-    #if not user.is_authenticated:
-    #    return JsonResponse({"error": "User not authenticated"}, status=401)
-
     data = request.data
     user = get_user(request)
     chat_id = data.get("chat_id")
     message = data.get("message")
     message_id = data.get("message_id")
+    chat_name = data.get("chat_name")  # Optional chat name
 
     if not chat_id or not message:
         return JsonResponse({"error": "Chat ID and message are required"}, status=400)
 
     try:
-        chat = Messages.objects.create(
+        # Create or get the chat entry
+        chat_obj, created = Chats.objects.get_or_create(
+            chat_id=chat_id,
+            user=user,
+            defaults={'chat_name': chat_name}
+        )
+        
+        # Create the message
+        message_obj = Messages.objects.create(
             chat_id=chat_id,
             message=message,
             user=user,
             message_id=message_id
         )
-        chat.save() # Save the message to the database
+        # message_obj.save()  # Not needed - create() already saves
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
 
@@ -78,18 +83,18 @@ def get_chat_history(request, chat_id):
 @permission_classes([IsAuthenticated])
 def get_chat_ids(request):
     """
-    Retrieve all chat IDs from the database for a user, ordered by most recent message.
+    Retrieve all chats for a user with names, ordered by creation time (most recent first).
     """
     user = get_user(request)
     try:
-        # Get chat IDs ordered by most recent message time
-        chat_ids = (Messages.objects
-                   .filter(user=user)
-                   .values('chat_id')
-                   .annotate(latest_time=Max('time_sent'))
-                   .order_by('-latest_time')
-                   .values_list('chat_id', flat=True))
-        return JsonResponse(list(chat_ids), safe=False)
+        chats = Chats.objects.filter(user=user).order_by('-created_at')
+        chat_list = []
+        for chat in chats:
+            chat_list.append({
+                "chat_id": str(chat.chat_id),
+                "chat_name": chat.chat_name,
+            })
+        return JsonResponse(chat_list, safe=False)
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
     
@@ -102,11 +107,17 @@ def delete_chat(request, chat_id):
     user = get_user(request)
 
     try:
-        chat = Messages.objects.filter(chat_id=chat_id, user=user)
-        if not chat.exists():
+        # Delete from both Messages and Chats tables
+        messages = Messages.objects.filter(chat_id=chat_id, user=user)
+        chat = Chats.objects.filter(chat_id=chat_id, user=user)
+        
+        if not messages.exists() and not chat.exists():
             return JsonResponse({"error": "Chat doesn't exist or you don't have access"}, status=404)
 
+        # Delete messages and chat metadata
+        messages.delete()
         chat.delete()
+        
         return JsonResponse({"message": "Chat deleted successfully"}, status=200)
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
@@ -154,3 +165,25 @@ def validate_json(request):
         return JsonResponse({"error": "JSON validation failed", "details": e.errors()}, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
         return JsonResponse({"error": f"An unexpected error occurred: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(["PUT"])
+@permission_classes([IsAuthenticated])
+def set_chat_name(request, chat_id):
+    """
+    Set or update the name of a chat.
+    """
+    user = get_user(request)
+    chat_name = request.data.get("chat_name")
+
+    if not chat_name:
+        return JsonResponse({"error": "Chat name is required"}, status=400)
+
+    try:
+        chat = Chats.objects.get(chat_id=chat_id, user=user)
+        chat.chat_name = chat_name
+        chat.save()
+        return JsonResponse({"message": "Chat name updated successfully"}, status=200)
+    except Chats.DoesNotExist:
+        return JsonResponse({"error": "Chat not found or you don't have access"}, status=404)
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)

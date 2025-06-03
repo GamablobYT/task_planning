@@ -488,6 +488,37 @@ const SettingsSidebar = ({ isOpen, setIsOpen }) => {
   const [parsedJson, setParsedJson] = useState({});
   const [validationError, setValidationError] = useState(null);
   const [showValidationError, setShowValidationError] = useState(false);
+  const [enabledModels, setEnabledModels] = useState([]);
+
+  // Read enabled models from localStorage
+  useEffect(() => {
+    const storedEnabledModels = localStorage.getItem('enabledModels');
+    if (storedEnabledModels) {
+      try {
+        const parsed = JSON.parse(storedEnabledModels);
+        setEnabledModels(parsed);
+      } catch (error) {
+        console.error('Error parsing enabled models from localStorage:', error);
+        setEnabledModels([]);
+      }
+    }
+  }, []);
+
+  // Filter models to only show enabled ones
+  const getFilteredModels = () => {
+    if (enabledModels.length === 0) {
+      return modelsList; // If no enabled models found, show all
+    }
+    
+    const filtered = {};
+    Object.entries(modelsList).forEach(([label, value]) => {
+      if (enabledModels.includes(value)) {
+        filtered[label] = value;
+      }
+    });
+    
+    return filtered;
+  };
 
   // Handle escape key
   useEffect(() => {
@@ -665,6 +696,7 @@ const SettingsSidebar = ({ isOpen, setIsOpen }) => {
               const hasValidJson = checkHasValidJson(model.systemPrompt);
               const modelIsJsonMode = isJsonMode[model.id];
               const modelParsedJson = parsedJson[model.id];
+              const filteredModels = getFilteredModels();
 
               return (
                 <div key={model.id} className="border border-slate-600 rounded-lg">
@@ -682,7 +714,7 @@ const SettingsSidebar = ({ isOpen, setIsOpen }) => {
                       <div className="flex items-center gap-1">
                         <button
                           onClick={() => toggleModelExpanded(model.id)}
-                          className="text-slate-400 hover:text-slate-200 transition-colors"
+                          className="text-slate-400 hover:text-slate-200 focus:text-slate-200 focus:border-1 rounded-md transition-all"
                         >
                           <svg 
                             className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
@@ -712,7 +744,7 @@ const SettingsSidebar = ({ isOpen, setIsOpen }) => {
                       onChange={(e) => handleModelChange(model.id, e.target.value)}
                       className="w-full bg-slate-700 border border-slate-600 rounded-lg p-2 text-slate-100 text-sm focus:ring-2 focus:ring-sky-500 focus:border-transparent"
                     >
-                      {Object.entries(modelsList).map(([label, value]) => (
+                      {Object.entries(filteredModels).map(([label, value]) => (
                         <option key={value} value={value}>{label}</option>
                       ))}
                     </select>
@@ -833,7 +865,7 @@ const SettingsSidebar = ({ isOpen, setIsOpen }) => {
                       {/* Reset Button */}
                       <button
                         onClick={() => resetModelToDefaults(model.id)}
-                        className="w-full bg-slate-700 hover:bg-slate-600 text-slate-100 
+                        className="w-full bg-slate-700 hover:bg-slate-600 text-slate-100 focus:bg-slate-600 
                                  border border-slate-600 rounded-lg py-2 px-3 text-sm
                                  transition-colors duration-200"
                       >
@@ -850,6 +882,7 @@ const SettingsSidebar = ({ isOpen, setIsOpen }) => {
               onClick={addModel}
               className="w-full border-2 border-dashed border-slate-600 rounded-lg p-4
                        text-slate-400 hover:text-slate-300 hover:border-slate-500
+                       focus:text-slate-300 focus:border-slate-500
                        transition-colors duration-200 flex items-center justify-center gap-2"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

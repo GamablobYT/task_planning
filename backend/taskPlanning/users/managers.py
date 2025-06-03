@@ -34,7 +34,6 @@ class UserManager:
                     "name": f"{user.first_name} {user.last_name}",
                     "username": user.username,
                     "userid": profile.userid,
-                    "industry": profile.industry,
                 })
             return Response({"name": "", "username": "", "id": ""})
         except Profile.DoesNotExist:

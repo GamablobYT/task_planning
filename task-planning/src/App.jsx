@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import "./App.css";
 import ChatPage from './pages/ChatPage';
+import Profile from './pages/Profile';
 import Sidebar from './components/Sidebar';
 import SignUp from './pages/SignUp';
 import Login from './pages/Login';
@@ -12,12 +13,13 @@ import apiService from './utils/api';
 import useStore from './store/store';
 import { useNavigate } from 'react-router-dom';
 
-function App() {
+function AppContent() {
   const {selectedModel, chats, setChats, activeChatID, setActiveChatID} = useStore();
   const {csrfToken, fetchCsrfToken, setRole} = useStore();
   const {isAuthenticated, setAuthentication} = useStore();
-
-  const isChatPage = window.location.pathname.startsWith("/chat");
+  
+  const location = useLocation();
+  const isChatPage = location.pathname.startsWith("/chat");
 
   useEffect(() => {
     // Check the session when the app loads
@@ -34,6 +36,7 @@ function App() {
     
     const fetchRole = async () => {
       const response = await apiService.get("/users/get-role/");
+      // console.log(response.data.role);
       setRole(response.data.role);
       localStorage.setItem("userRole", response.data.role);
     }
@@ -88,21 +91,28 @@ function App() {
   }
 
   return (
-    <Router>
-      <div className="flex h-screen bg-slate-900 text-slate-100">
-        {isChatPage && <Sidebar chats={chats} onNewChat={handleNewChat} />}
-        <div className="flex-1 overflow-hidden">
-          <Routes>
-            <Route path="/" element={isAuthenticated ? <Navigate to="/chat" /> : <Navigate to="/signup" replace />} />
-            <Route path='*' element={isAuthenticated ? <Navigate to="/chat" /> : <Navigate to="/signup" />} />
-            <Route path="/login" element={isAuthenticated ? <Navigate to='/chat' /> : <Login />} />
-            <Route path="/signup" element={isAuthenticated ? <Navigate to='chat' /> : <SignUp />} />
-            <Route element={<ProtectedRoute />} >
-              <Route path="/chat/:chatId?" element={<ChatPage onNewChat={handleNewChat} />} />
-            </Route>
-          </Routes>
-        </div>
+    <div className="flex h-screen bg-slate-900 text-slate-100">
+      {isChatPage && <Sidebar chats={chats} onNewChat={handleNewChat} />}
+      <div className="flex-1 overflow-hidden">
+        <Routes>
+          <Route path="/" element={isAuthenticated ? <Navigate to="/chat" /> : <Navigate to="/signup" replace />} />
+          <Route path='*' element={isAuthenticated ? <Navigate to="/chat" /> : <Navigate to="/signup" />} />
+          <Route path="/login" element={isAuthenticated ? <Navigate to='/chat' /> : <Login />} />
+          <Route path="/signup" element={isAuthenticated ? <Navigate to='chat' /> : <SignUp />} />
+          <Route element={<ProtectedRoute />} >
+            <Route path="/chat/:chatId?" element={<ChatPage onNewChat={handleNewChat} />} />
+            <Route path="/profile" element={<Profile />} />
+          </Route>
+        </Routes>
       </div>
+    </div>
+  );
+}
+
+function App() {
+  return (
+    <Router>
+      <AppContent />
     </Router>
   );
 }

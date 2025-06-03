@@ -15,7 +15,7 @@ app = Flask(__name__)
 # Update CORS to allow both localhost:5174 and standard React development port
 CORS(app, origins=["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173", "http://127.0.0.1:3000", "http://localhost:5174", "http://127.0.1:5174"])
 
-supported_models = ["deepseek-ai/DeepSeek-R1", "deepseek-ai/DeepSeek-R1-0528", "deepseek-ai/DeepSeek-V3-0324", "gemini-2.5-flash-preview-05-20"]
+supported_models = ["deepseek-ai/DeepSeek-R1", "deepseek-ai/DeepSeek-R1-0528", "deepseek-ai/DeepSeek-V3-0324", "gemini-2.5-flash-preview-05-20", "deepseek-ai/DeepSeek-R1-0528-Qwen3-8B"]
 
 # Store chat histories
 chat_histories = {}
@@ -88,7 +88,7 @@ def route_to_model():
     }
 
     print("DEBUGGING LENGTH OF ACTIVE CHAT HISTORY:", len(active_chat_history))
-    print(f"Received message: {user_message} for {len(modelsList)} models, chat_id: {chat_id}")
+    # print(f"Received message: {user_message} for {len(modelsList)} models, chat_id: {chat_id}")
     
     for model in modelsList:
         if model.get("value", "") not in supported_models:
@@ -146,12 +146,13 @@ def route_to_model():
                 
                 # Stream the current model's response
                 for chunk in next_response.response:
+                    # print(chunk)
                     yield chunk
     
     return Response(stream_with_context(generate_multi_model()), content_type='application/json')
 
 def invoke_chute(message, model, chat_id, config):
-    print(f"Invoking chute with message: {message}, model: {model}, chat_id: {chat_id}, config: {config}")
+    # print(f"Invoking chute with message: {message}, model: {model}, chat_id: {chat_id}, config: {config}")
     # Get API token from environment variable
     api_token = os.environ.get("CHUTES_API_TOKEN", "")
     
@@ -287,11 +288,13 @@ def invoke_chute_next(message, model, chat_id, config):
                                     break
                                 try:
                                     chunk = json.loads(data)
+                                    # print(chunk)
                                     if chunk and "choices" in chunk and len(chunk["choices"]) > 0:
                                         content = chunk["choices"][0].get("delta", {}).get("content", "")
                                         if content:
                                             full_response += content
                                             # Yield each chunk immediately
+                                            # print(content)
                                             yield json.dumps({"content": content}) + "\n"
                                             # Force flush to ensure immediate delivery
                                             await asyncio.sleep(0)

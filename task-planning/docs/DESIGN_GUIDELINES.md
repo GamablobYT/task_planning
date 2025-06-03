@@ -229,6 +229,56 @@ This document outlines the design aesthetics and expectations for components in 
   - ARIA labels for close button
   - Keyboard navigation support
 
+### Profile Page
+
+- **Purpose**: Displays user profile information and model preferences configuration
+- **Layout**:
+  - Two-column grid on large screens: grid lg:grid-cols-2 gap-6
+  - Single column on smaller screens with stacked sections
+  - Maximum width container: max-w-6xl mx-auto
+- **Profile Information Section**:
+  - Dynamic field rendering based on API response
+  - Field formatting with proper labels and consistent styling
+  - Profile picture placeholder with user icon
+  - Background: bg-slate-800/50 backdrop-blur-md
+- **Models Configuration Section**:
+  - Search bar for filtering models with icon and clear button
+  - Checkbox list for model selection
+  - Scrollable area: max-h-64 overflow-y-auto
+  - Local storage integration for persistence
+  - Save button with success feedback
+- **Search Bar Design**:
+  - Container: relative positioning for icon placement
+  - Input: w-full pl-10 pr-3 py-2 with bg-slate-700 border-slate-600
+  - Search icon: Positioned left with pointer-events-none
+  - Clear button: Appears when search term exists, positioned right
+  - Placeholder: "Search models..." with placeholder-slate-400
+  - Focus state: focus:ring-2 focus:ring-sky-500
+- **Model Item Design**:
+  - Container: p-3 bg-slate-700/30 border border-slate-600 rounded-lg
+  - Hover state: hover:bg-slate-700/50
+  - Checkbox: w-4 h-4 text-sky-500 with focus:ring-sky-400
+  - Model name: text-slate-100 font-medium
+  - Description: text-sm text-slate-400
+- **No Results State**:
+  - Centered layout with icon and message
+  - Icon: h-12 w-12 text-slate-400
+  - Message: "No models found matching [search term]"
+  - Padding: py-8 for vertical spacing
+- **Save Functionality**:
+  - Save button: bg-sky-600 hover:bg-sky-700 with hover:scale-105
+  - Success indicator: Green checkmark with "Saved successfully!" message
+  - Duration: 2-second display time for success message
+- **Dynamic Field Rendering**:
+  - Key formatting: Converts snake_case to Title Case
+  - Date formatting: Locale-aware date and time display
+  - Boolean formatting: "Yes"/"No" display
+  - Excludes ID fields from display
+- **Error Handling**:
+  - Error toast integration for API failures
+  - Retry buttons for failed operations
+  - Loading states with spinners
+
 ### Sidebar Chat Items
 
 - **Layout**:

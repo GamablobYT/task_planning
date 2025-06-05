@@ -247,7 +247,14 @@ def invoke_chute(message, model, chat_id, config):
                     
             # After streaming completes, add the full response to chat history
             if full_response:
-                active_chat_history.append({"role": "assistant", "content": full_response})
+                filtered_response = full_response
+                if "</think>" in full_response:
+                    think_index = full_response.rfind("</think>")
+                    filtered_response = full_response[think_index + 8:]
+
+                if filtered_response:
+                    # print(filtered_response)
+                    active_chat_history.append({"role": "assistant", "content": filtered_response})
         finally:
             loop.close()
     
@@ -339,7 +346,13 @@ def invoke_chute_next(message, model, chat_id, config):
                     
             # After streaming completes, add the full response to chat history
             if full_response:
-                active_chat_history.append({"role": "assistant", "content": full_response})
+                filtered_response = full_response
+                if "</think>" in full_response:
+                    think_index = full_response.rfind("</think>")
+                    filtered_response = full_response[think_index + 8:]
+
+                if filtered_response:
+                    active_chat_history.append({"role": "assistant", "content": full_response})
         finally:
             loop.close()
     

@@ -21,7 +21,8 @@ const useStore = create(
         temperature: 0.7,
         maxTokens: 16384,
         topP: 1.0,
-        minP: 0.0
+        minP: 0.0,
+        historySource: {} // Dictionary format
       }
     ],
 
@@ -63,7 +64,8 @@ const useStore = create(
           temperature: 0.7,
           maxTokens: 16384,
           topP: 1.0,
-          minP: 0.0
+          minP: 0.0,
+          historySource: {} // Empty dictionary for new models
         });
       });
     },
@@ -191,8 +193,38 @@ const useStore = create(
     setMinP: (minP) => set((state) => {
       if (state.models[0]) state.models[0].minP = minP;
     }),
+
+    resetModelToDefaults: (modelId) => {
+      set((state) => ({
+        models: state.models.map(model =>
+          model.id === modelId
+            ? {
+                ...model,
+                systemPrompt: "You are a helpful AI assistant.",
+                temperature: 0.7,
+                maxTokens: 16384,
+                topP: 1.0,
+                minP: 0.0,
+                // Don't reset historySource to maintain validation
+              }
+            : model
+        )
+      }));
+    },
   }))
 );
+
+const createModel = (id) => ({
+  id,
+  name: `Model ${id}`,
+  value: Object.values(modelsList)[0],
+  systemPrompt: "You are a helpful AI assistant.",
+  temperature: 0.7,
+  maxTokens: 16384,
+  topP: 1.0,
+  minP: 0.0,
+  historySource: {}
+});
 
 export default useStore;
 // This store manages the state of tasks in the application.s

@@ -667,6 +667,60 @@ const SettingsSidebar = ({ isOpen, setIsOpen }) => {
     }
   };
 
+  const getHistorySourceOptions = (currentModelId) => {
+    const options = [
+      { value: 'history', label: 'History' },
+      { value: 'prompt', label: 'Prompt' },
+      { value: 'models', label: 'Models' }
+    ];
+    
+    return options;
+  };
+
+  const handleHistorySourceChange = (modelId, sourceType, value) => {
+    const model = models.find(m => m.id === modelId);
+    const currentSources = model.historySource || {};
+    
+    let newSources = { ...currentSources };
+    
+    if (sourceType === 'history') {
+      if (value !== null) {
+        newSources.history = parseInt(value) || 1;
+      } else {
+        delete newSources.history;
+      }
+    } else if (sourceType === 'prompt') {
+      if (value !== null) {
+        newSources.prompt = value ? 1 : 0;
+      } else {
+        delete newSources.prompt;
+      }
+    } else if (sourceType === 'models') {
+      if (value !== null) {
+        newSources.models = value;
+      } else {
+        delete newSources.models;
+      }
+    }
+    
+    updateModelSetting(modelId, 'historySource', newSources);
+  };
+
+  const handleModelSelectionChange = (modelId, targetModelId, isChecked) => {
+    const model = models.find(m => m.id === modelId);
+    const currentSources = model.historySource || {};
+    const currentModels = currentSources.models || [];
+    
+    let newModels;
+    if (isChecked) {
+      newModels = [...currentModels, targetModelId];
+    } else {
+      newModels = currentModels.filter(id => id !== targetModelId);
+    }
+    
+    handleHistorySourceChange(modelId, 'models', newModels.length > 0 ? newModels : null);
+  };
+
   return (
     <>
       <ErrorToast
@@ -753,6 +807,124 @@ const SettingsSidebar = ({ isOpen, setIsOpen }) => {
                   {/* Expanded Settings */}
                   {isExpanded && (
                     <div className="border-t border-slate-600 p-3 space-y-4">
+                      {/* History Source */}
+                      <div className="space-y-2">
+                        <label className="block text-sm font-medium text-slate-200">
+                          Take history from <span className="text-red-400">*</span>
+                        </label>
+                        <div className={`bg-slate-700 border rounded-lg p-3 space-y-3 ${
+                          !model.historySource || Object.keys(model.historySource).length === 0 ? 'border-red-500' : 'border-slate-600'
+                        }`}>
+                          {/* History option */}
+                          <div className="space-y-2">
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={model.historySource?.history !== undefined}
+                                onChange={(e) => handleHistorySourceChange(
+                                  model.id, 
+                                  'history', 
+                                  e.target.checked ? (model.historySource?.history || 1) : null
+                                )}
+                                className="w-4 h-4 text-sky-500 bg-slate-600 border-slate-500 rounded focus:ring-sky-500 focus:ring-2"
+                              />
+                              <span className="text-sm text-slate-200">History</span>
+                            </label>
+                            {model.historySource?.history !== undefined && (
+                              <div className="ml-6">
+                                <input
+                                  type="number"
+                                  min="-1"
+                                  value={model.historySource.history || 0}
+                                  onChange={(e) => handleHistorySourceChange(
+                                    model.id, 
+                                    'history', 
+                                    parseInt(e.target.value) || 0
+                                  )}
+                                  className="w-20 bg-slate-600 border border-slate-500 rounded px-2 py-1 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                                  placeholder="Count"
+                                />
+                                <span className="ml-2 text-xs text-slate-400">messages</span>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Prompt option */}
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={model.historySource?.prompt !== undefined}
+                              onChange={(e) => handleHistorySourceChange(
+                                model.id, 
+                                'prompt', 
+                                e.target.checked ? 1 : null
+                              )}
+                              className="w-4 h-4 text-sky-500 bg-slate-600 border-slate-500 rounded focus:ring-sky-500 focus:ring-2"
+                            />
+                            <span className="text-sm text-slate-200">Prompt</span>
+                          </label>
+
+                          {/* Models option */}
+                          {models.filter(m => m.id !== model.id).length > 0 && (
+                            <div className="space-y-2">
+                              <label className="flex items-center gap-2 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={model.historySource?.models !== undefined}
+                                  onChange={(e) => handleHistorySourceChange(
+                                    model.id, 
+                                    'models', 
+                                    e.target.checked ? [] : null
+                                  )}
+                                  className="w-4 h-4 text-sky-500 bg-slate-600 border-slate-500 rounded focus:ring-sky-500 focus:ring-2"
+                                />
+                                <span className="text-sm text-slate-200">Models</span>
+                              </label>
+                              {model.historySource?.models !== undefined && (
+                                <div className="ml-6 space-y-2 border-l border-slate-600 pl-3">
+                                  {models
+                                    .filter(m => m.id !== model.id)
+                                    .map(targetModel => {
+                                      const isSelected = (model.historySource?.models || []).includes(targetModel.id);
+                                      // Check for circular dependency
+                                      const wouldCreateCircularDependency = (targetModel.historySource?.models || []).includes(model.id);
+                                      
+                                      return (
+                                        <label 
+                                          key={targetModel.id}
+                                          className={`flex items-center gap-2 cursor-pointer ${
+                                            wouldCreateCircularDependency ? 'opacity-50 cursor-not-allowed' : ''
+                                          }`}
+                                        >
+                                          <input
+                                            type="checkbox"
+                                            checked={isSelected}
+                                            disabled={wouldCreateCircularDependency}
+                                            onChange={(e) => handleModelSelectionChange(
+                                              model.id, 
+                                              targetModel.id, 
+                                              e.target.checked
+                                            )}
+                                            className="w-3 h-3 text-sky-500 bg-slate-600 border-slate-500 rounded focus:ring-sky-500 focus:ring-1"
+                                          />
+                                          <span className={`text-xs ${
+                                            wouldCreateCircularDependency ? 'text-slate-500' : 'text-slate-300'
+                                          }`}>
+                                            {targetModel.name}
+                                          </span>
+                                        </label>
+                                      );
+                                    })}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                        {(!model.historySource || Object.keys(model.historySource).length === 0) && (
+                          <p className="text-red-400 text-xs">At least one history source is required</p>
+                        )}
+                      </div>
+
                       {/* System Prompt */}
                       <div className="space-y-2">
                         <label className="block text-sm font-medium text-slate-200">

@@ -5,12 +5,14 @@ import ErrorToast from './ErrorToast';
 import modelsList from '../consts/models';
 
 // JSON Renderer Component
-const JsonRenderer = ({ data, level = 0, onDataChange }) => {
+const JsonRenderer = ({ data, level = 0, onDataChange, onKeyChange }) => {
   const [expandedKeys, setExpandedKeys] = useState(new Set());
-  const [editingField, setEditingField] = useState(null);
+  const [editingField, setEditingField] = useState(null); // For values: 'path.to.key'
   const [editValue, setEditValue] = useState('');
+  const [editingKey, setEditingKey] = useState(null); // For keys: 'path.to.key'
+  const [newKeyName, setNewKeyName] = useState('');
   const [hoveredField, setHoveredField] = useState(null);
-  const [addingField, setAddingField] = useState(null);
+  const [addingField, setAddingField] = useState(null); // Can be path to an object or an array
   const [newFieldKey, setNewFieldKey] = useState('');
   const [newFieldValue, setNewFieldValue] = useState('');
 
@@ -25,45 +27,38 @@ const JsonRenderer = ({ data, level = 0, onDataChange }) => {
   };
 
   const handleSingleClick = (key, value, path) => {
+    const fieldId = `${path.length > 0 ? path.join('.') + '.' : ''}${key}`;
     if (typeof value !== 'object' || value === null) {
-      setEditingField(`${path.length > 0 ? path.join('.') + '.' : ''}${key}`);
+      setEditingField(fieldId);
       setEditValue(String(value));
     }
   };
 
+  const parseValue = (value) => {
+    let parsedValue = value;
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      parsedValue = value.slice(1, -1);
+    } else if (value.trim().startsWith('{') || value.trim().startsWith('[')) {
+      try { parsedValue = JSON.parse(value); } catch (e) { /* keep as string */ }
+    } else if (value.toLowerCase() === 'true') {
+      parsedValue = true;
+    } else if (value.toLowerCase() === 'false') {
+      parsedValue = false;
+    } else if (value.toLowerCase() === 'null') {
+      parsedValue = null;
+    } else if (!isNaN(value) && value.trim() !== '') {
+      if (String(parseFloat(value)) === value.trim() && Number.isInteger(parseFloat(value))) {
+        parsedValue = parseInt(value);
+      } else if (String(parseFloat(value)) === value.trim()) {
+        parsedValue = parseFloat(value);
+      }
+    }
+    return parsedValue;
+  };
+
   const handleEditSubmit = async (key, path) => {
     if (onDataChange) {
-      let parsedValue = editValue;
-      
-      // Check if the value is wrapped in quotes - treat as string
-      if ((editValue.startsWith('"') && editValue.endsWith('"')) || 
-          (editValue.startsWith("'") && editValue.endsWith("'"))) {
-        parsedValue = editValue.slice(1, -1); // Remove quotes and keep as string
-      } else {
-        // Try to parse as JSON if it looks like JSON
-        if (editValue.trim().startsWith('{') || editValue.trim().startsWith('[')) {
-          try {
-            parsedValue = JSON.parse(editValue);
-          } catch (e) {
-            // If parsing fails, keep as string
-          }
-        } else if (editValue.toLowerCase() === 'true') {
-          parsedValue = true;
-        } else if (editValue.toLowerCase() === 'false') {
-          parsedValue = false;
-        } else if (editValue.toLowerCase() === 'null') {
-          parsedValue = null;
-        } else if (!isNaN(editValue) && editValue.trim() !== '') {
-          // Check if it's an integer
-          if (Number.isInteger(parseFloat(editValue))) {
-            parsedValue = parseInt(editValue);
-          } else {
-            parsedValue = parseFloat(editValue);
-          }
-        }
-        // Otherwise keep as string
-      }
-      
+      const parsedValue = parseValue(editValue);
       const success = await onDataChange(path, key, parsedValue);
       if (success !== false) {
         setEditingField(null);
@@ -77,7 +72,32 @@ const JsonRenderer = ({ data, level = 0, onDataChange }) => {
     setEditValue('');
   };
 
-  const handleAddField = (path) => {
+  const handleKeyDoubleClick = (key, path) => {
+    if (typeof key === 'number') return;
+    const keyId = `${path.length > 0 ? path.join('.') + '.' : ''}${key}`;
+    setEditingKey(keyId);
+    setNewKeyName(key);
+  };
+
+  const handleKeyEditSubmit = async (key, path) => {
+    if (onKeyChange && newKeyName && newKeyName !== key) {
+      const success = await onKeyChange(path, key, newKeyName);
+      if (success !== false) {
+        setEditingKey(null);
+        setNewKeyName('');
+      }
+    } else {
+      setEditingKey(null);
+      setNewKeyName('');
+    }
+  };
+
+  const handleKeyEditCancel = () => {
+    setEditingKey(null);
+    setNewKeyName('');
+  };
+  
+  const handleStartAddField = (path) => {
     setAddingField(path.join('.'));
     setNewFieldKey('');
     setNewFieldValue('');
@@ -85,37 +105,7 @@ const JsonRenderer = ({ data, level = 0, onDataChange }) => {
 
   const handleAddFieldSubmit = async (path) => {
     if (newFieldKey && onDataChange) {
-      let processedValue = newFieldValue;
-      
-      // Check if the value is wrapped in quotes - treat as string
-      if ((newFieldValue.startsWith('"') && newFieldValue.endsWith('"')) || 
-          (newFieldValue.startsWith("'") && newFieldValue.endsWith("'"))) {
-        processedValue = newFieldValue.slice(1, -1); // Remove quotes and keep as string
-      } else {
-        // Try to parse as JSON if it looks like JSON
-        if (newFieldValue.trim().startsWith('{') || newFieldValue.trim().startsWith('[')) {
-          try {
-            processedValue = JSON.parse(newFieldValue);
-          } catch (e) {
-            // If parsing fails, keep as string
-          }
-        } else if (newFieldValue.toLowerCase() === 'true') {
-          processedValue = true;
-        } else if (newFieldValue.toLowerCase() === 'false') {
-          processedValue = false;
-        } else if (newFieldValue.toLowerCase() === 'null') {
-          processedValue = null;
-        } else if (!isNaN(newFieldValue) && newFieldValue.trim() !== '') {
-          // Check if it's an integer
-          if (Number.isInteger(parseFloat(newFieldValue))) {
-            processedValue = parseInt(newFieldValue);
-          } else {
-            processedValue = parseFloat(newFieldValue);
-          }
-        }
-        // Otherwise keep as string
-      }
-      
+      const processedValue = parseValue(newFieldValue);
       const success = await onDataChange(path, newFieldKey, processedValue);
       if (success !== false) {
         setAddingField(null);
@@ -124,8 +114,19 @@ const JsonRenderer = ({ data, level = 0, onDataChange }) => {
       }
     }
   };
-
-  const handleAddFieldCancel = () => {
+  
+  const handleAddItemSubmit = async (path, array) => {
+    if (onDataChange) {
+        const processedValue = parseValue(newFieldValue);
+        const success = await onDataChange(path, array.length, processedValue);
+        if (success !== false) {
+            setAddingField(null);
+            setNewFieldValue('');
+        }
+    }
+  };
+  
+  const handleAddCancel = () => {
     setAddingField(null);
     setNewFieldKey('');
     setNewFieldValue('');
@@ -140,268 +141,166 @@ const JsonRenderer = ({ data, level = 0, onDataChange }) => {
   const renderValue = (key, value, currentLevel, path = []) => {
     const currentPath = [...path, key];
     const fieldId = `${currentLevel}-${key}`;
-    const editFieldId = `${path.length > 0 ? path.join('.') + '.' : ''}${key}`;
-    const isEditing = editingField === editFieldId;
+    const fullPathId = `${path.length > 0 ? path.join('.') + '.' : ''}${key}`;
+    const isEditing = editingField === fullPathId;
+    const isEditingKey = editingKey === fullPathId;
     const isHovered = hoveredField === fieldId;
+    const isAddingToThis = addingField === fullPathId;
+
+    const keyComponent = isEditingKey ? (
+        <input
+            type="text"
+            value={newKeyName}
+            onChange={(e) => setNewKeyName(e.target.value)}
+            onBlur={() => handleKeyEditSubmit(key, path)}
+            onKeyDown={(e) => {
+                if (e.key === 'Enter') handleKeyEditSubmit(key, path);
+                else if (e.key === 'Escape') handleKeyEditCancel();
+            }}
+            className="bg-slate-600 border border-slate-500 rounded px-1 py-0 text-sm font-medium text-sky-300 focus:outline-none focus:ring-1 focus:ring-sky-500 w-24"
+            autoFocus
+        />
+    ) : (
+        <span 
+            className="font-medium text-sky-300"
+            onDoubleClick={() => handleKeyDoubleClick(key, path)}
+        >
+            {key}
+        </span>
+    );
 
     if (typeof value === 'object' && value !== null) {
+      const isExpanded = expandedKeys.has(fullPathId);
+      
       if (Array.isArray(value)) {
-        // Handle arrays
+        const addItemForm = (
+            <div className="mt-2 p-2 bg-slate-600/20 rounded border border-slate-500">
+                <div className="flex flex-col gap-2">
+                    <input type="text" placeholder="New item value" value={newFieldValue} onChange={(e) => setNewFieldValue(e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleAddItemSubmit(currentPath, value);
+                            else if (e.key === 'Escape') handleAddCancel();
+                        }}
+                        className="bg-slate-700 border border-slate-500 rounded px-2 py-1 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500" autoFocus/>
+                    <div className="flex gap-1">
+                        <button onClick={() => handleAddItemSubmit(currentPath, value)} className="text-xs bg-green-500/20 text-green-300 px-2 py-1 rounded hover:bg-green-500/30 transition-colors">Add</button>
+                        <button onClick={handleAddCancel} className="text-xs bg-slate-500/20 text-slate-300 px-2 py-1 rounded hover:bg-slate-500/30 transition-colors">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        );
         return (
-          <div key={key} className="mb-2 p-2">
-            <div 
-              className="flex items-center justify-between group"
-              onMouseEnter={() => setHoveredField(fieldId)}
-              onMouseLeave={() => setHoveredField(null)}
-            >
-              <div>
-                <span className="font-medium text-sky-300">{key}</span>
-                <span className="text-slate-300 ml-2">: [</span>
+          <div key={key} className="mb-2">
+            <div className="flex items-center justify-between group cursor-pointer hover:bg-slate-700/30 p-2 rounded"
+              onClick={() => toggleExpanded(fullPathId)} onMouseEnter={() => setHoveredField(fieldId)} onMouseLeave={() => setHoveredField(null)}>
+              <div className="flex items-center gap-2">
+                <svg className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-90' : ''}`} fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" /></svg>
+                {keyComponent}
+                <span className="text-slate-300 ml-2">: [ {!isExpanded && `${value.length} items`}</span>
               </div>
               {isHovered && (
                 <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button
-                    onClick={() => handleRemoveField(key, path)}
-                    className="w-4 h-4 text-red-400 hover:text-red-300 flex items-center justify-center"
-                    title="Remove field"
-                  >
-                    <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M3 10a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clipRule="evenodd" />
-                    </svg>
-                  </button>
+                    <button onClick={(e) => { e.stopPropagation(); handleStartAddField(currentPath); }} className="w-4 h-4 text-green-400 hover:text-green-300 flex items-center justify-center" title="Add item"><svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" /></svg></button>
+                    <button onClick={(e) => { e.stopPropagation(); handleRemoveField(key, path); }} className="w-4 h-4 text-red-400 hover:text-red-300 flex items-center justify-center" title="Remove field"><svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M3 10a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clipRule="evenodd" /></svg></button>
                 </div>
               )}
             </div>
-            <div className="ml-6 mt-1">
-              {value.map((item, index) => (
-                <div key={index} className="text-slate-300">
-                  {index}: {typeof item === 'object' ? JSON.stringify(item) : String(item)}
+            {isExpanded && (
+              <>
+                <div className="ml-6 mt-1 border-l-2 border-slate-600 pl-4">
+                  {value.map((item, index) => renderValue(index, item, currentLevel + 1, currentPath))}
+                  {isAddingToThis && addItemForm}
+                  {value.length === 0 && !isAddingToThis && <div className="text-slate-400 text-sm italic">Empty array</div>}
                 </div>
-              ))}
-            </div>
-            <span className="text-slate-300 ml-2">]</span>
+                <span className="text-slate-300 ml-2">]</span>
+              </>
+            )}
+            {!isExpanded && <span className="text-slate-300 ml-2">]</span>}
           </div>
         );
       } else {
-        // Handle objects
-        const hasDefinition = value.definition;
-        const hasNestedContent = Object.keys(value).some(k => 
-          k !== 'definition'
+        const hasDefinition = value.hasOwnProperty('definition');
+        const hasNestedContent = Object.keys(value).some(k => k !== 'definition');
+        const shouldBeExpandable = hasNestedContent || Object.keys(value).length === 0 || hasDefinition;
+        const addFieldForm = (
+            <div className="mt-2 p-2 bg-slate-600/20 rounded border border-slate-500">
+                <div className="flex flex-col gap-2">
+                    <input type="text" placeholder="Field name" value={newFieldKey} onChange={(e) => setNewFieldKey(e.target.value)} className="bg-slate-700 border border-slate-500 rounded px-2 py-1 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500" autoFocus/>
+                    <input type="text" placeholder="Field value" value={newFieldValue} onChange={(e) => setNewFieldValue(e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleAddFieldSubmit(currentPath);
+                            else if (e.key === 'Escape') handleAddCancel();
+                        }}
+                        className="bg-slate-700 border border-slate-500 rounded px-2 py-1 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"/>
+                    <div className="flex gap-1">
+                        <button onClick={() => handleAddFieldSubmit(currentPath)} className="text-xs bg-green-500/20 text-green-300 px-2 py-1 rounded hover:bg-green-500/30 transition-colors">Add</button>
+                        <button onClick={handleAddCancel} className="text-xs bg-slate-500/20 text-slate-300 px-2 py-1 rounded hover:bg-slate-500/30 transition-colors">Cancel</button>
+                    </div>
+                </div>
+            </div>
         );
-        const isExpanded = expandedKeys.has(`${currentLevel}-${key}`);
-        const isAddingToThis = addingField === currentPath.join('.');
-        
-        // Empty objects should be expandable to allow adding fields
-        const shouldBeExpandable = hasNestedContent || Object.keys(value).length === 0;
 
         return (
           <div key={key} className="mb-2">
-            <div 
-              className={`flex items-center justify-between gap-2 p-2 rounded group ${shouldBeExpandable ? 'cursor-pointer hover:bg-slate-700/30' : ''}`}
-              onClick={() => shouldBeExpandable && toggleExpanded(`${currentLevel}-${key}`)}
-              onMouseEnter={() => setHoveredField(fieldId)}
-              onMouseLeave={() => setHoveredField(null)}
-            >
+            <div className={`flex items-center justify-between gap-2 p-2 rounded group ${shouldBeExpandable ? 'cursor-pointer hover:bg-slate-700/30' : ''}`}
+              onClick={() => shouldBeExpandable && toggleExpanded(fullPathId)} onMouseEnter={() => setHoveredField(fieldId)} onMouseLeave={() => setHoveredField(null)}>
               <div className="flex items-center gap-2">
-                {shouldBeExpandable && (
-                  <svg 
-                    className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
-                    fill="currentColor" 
-                    viewBox="0 0 20 20"
-                  >
-                    <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
-                  </svg>
-                )}
-                <span className="font-medium text-sky-300">{key}</span>
+                {shouldBeExpandable && (<svg className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-90' : ''}`} fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" /></svg>)}
+                {keyComponent}
               </div>
               {isHovered && (
                 <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleAddField(currentPath);
-                    }}
-                    className="w-4 h-4 text-green-400 hover:text-green-300 flex items-center justify-center"
-                    title="Add field"
-                  >
-                    <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
-                    </svg>
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleRemoveField(key, path);
-                    }}
-                    className="w-4 h-4 text-red-400 hover:text-red-300 flex items-center justify-center"
-                    title="Remove field"
-                  >
-                    <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M3 10a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clipRule="evenodd" />
-                    </svg>
-                  </button>
+                  <button onClick={(e) => { e.stopPropagation(); handleStartAddField(currentPath); }} className="w-4 h-4 text-green-400 hover:text-green-300 flex items-center justify-center" title="Add field"><svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" /></svg></button>
+                  <button onClick={(e) => { e.stopPropagation(); handleRemoveField(key, path); }} className="w-4 h-4 text-red-400 hover:text-red-300 flex items-center justify-center" title="Remove field"><svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M3 10a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clipRule="evenodd" /></svg></button>
                 </div>
               )}
             </div>
             
-            {hasNestedContent && isExpanded && (
+            {isExpanded && (
               <div className="ml-6 mt-2 border-l-2 border-slate-600 pl-4">
                 {hasDefinition && (
                   <div className="mb-3 p-2 bg-slate-600/30 rounded text-sm text-slate-300 italic">
-                    {value.definition}
+                    {editingField === `${currentPath.join('.')}.definition` ? (
+                      <input type="text" value={editValue} onChange={(e) => setEditValue(e.target.value)} onBlur={() => handleEditSubmit('definition', currentPath)} onKeyDown={(e) => { if (e.key === 'Enter') handleEditSubmit('definition', currentPath); else if (e.key === 'Escape') handleEditCancel();}} className="w-full bg-slate-700 border border-slate-500 rounded px-2 py-1 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500 not-italic" autoFocus/>
+                    ) : (
+                      <div className="cursor-pointer" onClick={() => handleSingleClick('definition', value.definition, currentPath)}>
+                        <span className="font-medium not-italic text-slate-200">definition: </span>
+                        <span className="hover:bg-slate-700/50 rounded px-1">{value.definition === "" ? <i className="text-slate-500">(empty)</i> : value.definition}</span>
+                      </div>
+                    )}
                   </div>
                 )}
                 {Object.entries(value).map(([nestedKey, nestedValue]) => {
                   if (nestedKey === 'definition') return null;
                   return renderValue(nestedKey, nestedValue, currentLevel + 1, currentPath);
                 })}
-                
-                {/* Add field form */}
-                {isAddingToThis && (
-                  <div className="mt-2 p-2 bg-slate-600/20 rounded border border-slate-500">
-                    <div className="flex flex-col gap-2">
-                      <input
-                        type="text"
-                        placeholder="Field name"
-                        value={newFieldKey}
-                        onChange={(e) => setNewFieldKey(e.target.value)}
-                        className="bg-slate-700 border border-slate-500 rounded px-2 py-1 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
-                        autoFocus
-                      />
-                      <input
-                        type="text"
-                        placeholder="Field value"
-                        value={newFieldValue}
-                        onChange={(e) => setNewFieldValue(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            handleAddFieldSubmit(currentPath);
-                          } else if (e.key === 'Escape') {
-                            handleAddFieldCancel();
-                          }
-                        }}
-                        className="bg-slate-700 border border-slate-500 rounded px-2 py-1 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
-                      />
-                      <div className="flex gap-1">
-                        <button
-                          onClick={() => handleAddFieldSubmit(currentPath)}
-                          className="text-xs bg-green-500/20 text-green-300 px-2 py-1 rounded hover:bg-green-500/30 transition-colors"
-                        >
-                          Add
-                        </button>
-                        <button
-                          onClick={handleAddFieldCancel}
-                          className="text-xs bg-slate-500/20 text-slate-300 px-2 py-1 rounded hover:bg-slate-500/30 transition-colors"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-            
-            {/* Show expanded empty object with add button */}
-            {!hasNestedContent && isExpanded && (
-              <div className="ml-6 mt-2 border-l-2 border-slate-600 pl-4">
-                {/* Add field form for empty objects */}
-                {isAddingToThis && (
-                  <div className="mt-2 p-2 bg-slate-600/20 rounded border border-slate-500">
-                    <div className="flex flex-col gap-2">
-                      <input
-                        type="text"
-                        placeholder="Field name"
-                        value={newFieldKey}
-                        onChange={(e) => setNewFieldKey(e.target.value)}
-                        className="bg-slate-700 border border-slate-500 rounded px-2 py-1 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
-                        autoFocus
-                      />
-                      <input
-                        type="text"
-                        placeholder="Field value"
-                        value={newFieldValue}
-                        onChange={(e) => setNewFieldValue(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            handleAddFieldSubmit(currentPath);
-                          } else if (e.key === 'Escape') {
-                            handleAddFieldCancel();
-                          }
-                        }}
-                        className="bg-slate-700 border border-slate-500 rounded px-2 py-1 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
-                      />
-                      <div className="flex gap-1">
-                        <button
-                          onClick={() => handleAddFieldSubmit(currentPath)}
-                          className="text-xs bg-green-500/20 text-green-300 px-2 py-1 rounded hover:bg-green-500/30 transition-colors"
-                        >
-                          Add
-                        </button>
-                        <button
-                          onClick={handleAddFieldCancel}
-                          className="text-xs bg-slate-500/20 text-slate-300 px-2 py-1 rounded hover:bg-slate-500/30 transition-colors"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-                {!isAddingToThis && (
-                  <div className="text-slate-400 text-sm italic">Empty object</div>
-                )}
+                {isAddingToThis && addFieldForm}
+                {!hasNestedContent && !hasDefinition && !isAddingToThis && <div className="text-slate-400 text-sm italic">Empty object</div>}
               </div>
             )}
           </div>
         );
       }
     } else {
-      // Handle primitives (string, number, boolean)
       return (
         <div key={key} className="mb-2 p-2">
-          <div 
-            className="flex items-center justify-between group"
-            onMouseEnter={() => setHoveredField(fieldId)}
-            onMouseLeave={() => setHoveredField(null)}
-          >
-            <div 
-              className="flex-1 cursor-pointer"
-              onClick={() => handleSingleClick(key, value, path)}
-            >
-              <span className="font-medium text-sky-300">{key}</span>
-              <span className="text-slate-300 ml-2">: </span>
-              {isEditing ? (
-                <input
-                  type="text"
-                  value={editValue}
-                  onChange={(e) => setEditValue(e.target.value)}
-                  onBlur={() => handleEditSubmit(key, path)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      handleEditSubmit(key, path);
-                    } else if (e.key === 'Escape') {
-                      handleEditCancel();
-                    }
-                  }}
-                  className="bg-slate-600 border border-slate-500 rounded px-2 py-1 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
-                  autoFocus
-                />
-              ) : (
-                <span className="text-slate-300">{String(value)}</span>
-              )}
+          <div className="flex items-center justify-between group" onMouseEnter={() => setHoveredField(fieldId)} onMouseLeave={() => setHoveredField(null)}>
+            <div className="flex-1">
+              <div className="flex items-center gap-2">
+                  {keyComponent}
+                  <span className="text-slate-300">: </span>
+                  {isEditing ? (
+                    <input type="text" value={editValue} onChange={(e) => setEditValue(e.target.value)} onBlur={() => handleEditSubmit(key, path)} onKeyDown={(e) => { if (e.key === 'Enter') {handleEditSubmit(key, path);} else if (e.key === 'Escape') {handleEditCancel();}}} className="bg-slate-600 border border-slate-500 rounded px-2 py-1 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500 flex-1" autoFocus/>
+                  ) : (
+                    <span className="text-slate-300 cursor-pointer hover:bg-slate-600/50 rounded px-2" onClick={() => handleSingleClick(key, value, path)}>
+                      {value === "" ? <span className="italic text-slate-500">(empty)</span> : String(value)}
+                    </span>
+                  )}
+              </div>
             </div>
             {isHovered && !isEditing && (
               <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button
-                  onClick={() => handleRemoveField(key, path)}
-                  className="w-4 h-4 text-red-400 hover:text-red-300 flex items-center justify-center"
-                  title="Remove field"
-                >
-                  <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M3 10a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clipRule="evenodd" />
-                  </svg>
-                </button>
+                <button onClick={() => handleRemoveField(key, path)} className="w-4 h-4 text-red-400 hover:text-red-300 flex items-center justify-center" title="Remove field"><svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M3 10a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clipRule="evenodd" /></svg></button>
               </div>
             )}
           </div>
@@ -410,66 +309,16 @@ const JsonRenderer = ({ data, level = 0, onDataChange }) => {
     }
   };
 
+  const renderTopLevel = () => {
+    if (Array.isArray(data)) {
+      return data.map((item, index) => renderValue(index, item, level, []));
+    }
+    return Object.entries(data).map(([key, value]) => renderValue(key, value, level, []));
+  };
+  
   return (
     <div className="text-sm">
-      {Object.entries(data).map(([key, value]) => renderValue(key, value, level))}
-      
-      {/* Root level add field */}
-      {level === 0 && addingField === '' && (
-        <div className="mt-2 p-2 bg-slate-600/20 rounded border border-slate-500">
-          <div className="flex flex-col gap-2">
-            <input
-              type="text"
-              placeholder="Field name"
-              value={newFieldKey}
-              onChange={(e) => setNewFieldKey(e.target.value)}
-              className="bg-slate-700 border border-slate-500 rounded px-2 py-1 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
-              autoFocus
-            />
-            <input
-              type="text"
-              placeholder="Field value"
-              value={newFieldValue}
-              onChange={(e) => setNewFieldValue(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  handleAddFieldSubmit([]);
-                } else if (e.key === 'Escape') {
-                  handleAddFieldCancel();
-                }
-              }}
-              className="bg-slate-700 border border-slate-500 rounded px-2 py-1 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
-            />
-            <div className="flex gap-1">
-              <button
-                onClick={() => handleAddFieldSubmit([])}
-                className="text-xs bg-green-500/20 text-green-300 px-2 py-1 rounded hover:bg-green-500/30 transition-colors"
-              >
-                Add
-              </button>
-              <button
-                onClick={handleAddFieldCancel}
-                className="text-xs bg-slate-500/20 text-slate-300 px-2 py-1 rounded hover:bg-slate-500/30 transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      
-      {/* Root level add button */}
-      {level === 0 && addingField !== '' && (
-        <button
-          onClick={() => handleAddField([])}
-          className="mt-2 text-xs bg-green-500/20 text-green-300 px-2 py-1 rounded hover:bg-green-500/30 transition-colors flex items-center gap-1"
-        >
-          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-            <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
-          </svg>
-          Add Field
-        </button>
-      )}
+      {renderTopLevel()}
     </div>
   );
 };
@@ -610,12 +459,14 @@ const SettingsSidebar = ({ isOpen, setIsOpen }) => {
             if (typeof parsed === 'object' && parsed !== null) {
               // Validate JSON with backend
               try {
-                const response = await apiService.post("/chats/validate-json/", parsed);
-                if (response.status === 200) {
-                  updateModelSetting(modelId, 'systemPrompt', content);
-                  setValidationError(null);
-                  setShowValidationError(false);
+                await apiService.post("/chats/validate-json/", parsed);
+                updateModelSetting(modelId, 'systemPrompt', content);
+                // If currently in JSON mode, update the parsedJson state
+                if (isJsonMode[modelId]) {
+                  setParsedJson(prev => ({...prev, [modelId]: parsed}));
                 }
+                setValidationError(null);
+                setShowValidationError(false);
               } catch (error) {
                 console.error("JSON validation failed on backend:", error);
                 let errorMessage = "JSON validation failed. Please check the structure.";
@@ -653,38 +504,33 @@ const SettingsSidebar = ({ isOpen, setIsOpen }) => {
 
     const newData = JSON.parse(JSON.stringify(currentParsedJson));
     
-    if (path.length === 0) {
-      if (isDelete) {
-        delete newData[key];
-      } else {
-        newData[key] = value;
-      }
-    } else {
-      let current = newData;
-      for (const pathKey of path) {
+    let current = newData;
+    for (const pathKey of path) {
         if (current[pathKey] === undefined) {
-          current[pathKey] = {};
+            // This should not happen if path is correct
+            current[pathKey] = {}; 
         }
         current = current[pathKey];
-      }
-      
-      if (isDelete) {
-        delete current[key];
-      } else {
+    }
+    
+    if (isDelete) {
+        if (Array.isArray(current)) {
+            current.splice(key, 1);
+        } else {
+            delete current[key];
+        }
+    } else {
         current[key] = value;
-      }
     }
     
     // Validate JSON with backend
     try {
-      const response = await apiService.post("/chats/validate-json/", newData);
-      if (response.status === 200) {
-        setParsedJson(prev => ({ ...prev, [modelId]: newData }));
-        updateModelSetting(modelId, 'systemPrompt', JSON.stringify(newData, null, 2));
-        setValidationError(null);
-        setShowValidationError(false);
-        return true; // Success
-      }
+      await apiService.post("/chats/validate-json/", newData);
+      setParsedJson(prev => ({ ...prev, [modelId]: newData }));
+      updateModelSetting(modelId, 'systemPrompt', JSON.stringify(newData, null, 2));
+      setValidationError(null);
+      setShowValidationError(false);
+      return true; // Success
     } catch (error) {
       console.error("JSON validation failed on backend:", error);
       let errorMessage = "JSON validation failed. Please check the structure.";
@@ -698,6 +544,61 @@ const SettingsSidebar = ({ isOpen, setIsOpen }) => {
       return false; // Failure
     }
   };
+  
+  const handleJsonKeyChange = async (modelId, path, oldKey, newKey) => {
+    const currentParsedJson = parsedJson[modelId];
+    if (!currentParsedJson || !newKey || oldKey === newKey) return false;
+
+    let finalObject;
+    const newData = JSON.parse(JSON.stringify(currentParsedJson));
+
+    let parentObject = newData;
+    for (const p of path) {
+        parentObject = parentObject[p];
+    }
+
+    if (Object.prototype.hasOwnProperty.call(parentObject, newKey)) {
+        setValidationError(`Key "${newKey}" already exists at this level.`);
+        setShowValidationError(true);
+        return false;
+    }
+
+    const newParent = Object.fromEntries(
+        Object.entries(parentObject).map(([k, v]) => (k === oldKey ? [newKey, v] : [k, v]))
+    );
+
+    if (path.length === 0) {
+        finalObject = newParent;
+    } else {
+        let grandParent = newData;
+        for (let i = 0; i < path.length - 1; i++) {
+            grandParent = grandParent[path[i]];
+        }
+        grandParent[path[path.length - 1]] = newParent;
+        finalObject = newData;
+    }
+
+    try {
+        await apiService.post("/chats/validate-json/", finalObject);
+        setParsedJson(prev => ({ ...prev, [modelId]: finalObject }));
+        updateModelSetting(modelId, 'systemPrompt', JSON.stringify(finalObject, null, 2));
+        setValidationError(null);
+        setShowValidationError(false);
+        return true;
+    } catch (error) {
+        console.error("JSON validation failed on backend:", error);
+        let errorMessage = "JSON validation failed after key rename.";
+        if (error?.data?.details) {
+            errorMessage = error.data.details.map(d => `${d.loc.join('.')}: ${d.msg}`).join('; ');
+        } else if (error?.data?.error) {
+            errorMessage = error.data.error;
+        }
+        setValidationError(errorMessage);
+        setShowValidationError(true);
+        return false;
+    }
+  };
+
 
   const handleRenderAsJson = async (modelId) => {
     const model = models.find(m => m.id === modelId);
@@ -706,13 +607,11 @@ const SettingsSidebar = ({ isOpen, setIsOpen }) => {
         const parsed = JSON.parse(model.systemPrompt);
         if (typeof parsed === 'object' && parsed !== null) {
           try {
-            const response = await apiService.post("/chats/validate-json/", parsed);
-            if (response.status === 200) {
-              setParsedJson(prev => ({ ...prev, [modelId]: parsed }));
-              setIsJsonMode(prev => ({ ...prev, [modelId]: true }));
-              setValidationError(null);
-              setShowValidationError(false);
-            }
+            await apiService.post("/chats/validate-json/", parsed);
+            setParsedJson(prev => ({ ...prev, [modelId]: parsed }));
+            setIsJsonMode(prev => ({ ...prev, [modelId]: true }));
+            setValidationError(null);
+            setShowValidationError(false);
           } catch (error) {
             console.error("JSON validation failed on backend:", error);
             let errorMessage = "JSON validation failed. Please check the structure.";
@@ -1076,6 +975,7 @@ const SettingsSidebar = ({ isOpen, setIsOpen }) => {
                             <JsonRenderer 
                               data={modelParsedJson} 
                               onDataChange={(path, key, value, isDelete) => handleJsonDataChange(model.id, path, key, value, isDelete)} 
+                              onKeyChange={(path, oldKey, newKey) => handleJsonKeyChange(model.id, path, oldKey, newKey)}
                             />
                           </div>
                         ) : (

@@ -3,13 +3,14 @@ import { immer } from "zustand/middleware/immer";
 import apiService from "../utils/api";
 
 const useStore = create(
-  immer((set) => ({
+  immer((set, get) => ({
     messages: [],
     chats: [],
     activeChatID: null,
     isAuthenticated: null,
     role: null,
     csrfToken: null,
+    _nextModelId: 1, // Initial default, will be properly initialized
 
     // Unified models array with settings
     models: [
@@ -25,6 +26,17 @@ const useStore = create(
         historySource: {} // Dictionary format
       }
     ],
+
+    initializeNextModelId: () => {
+      set(state => {
+        if (state.models.length > 0) {
+          const maxId = Math.max(...state.models.map(m => m.id), 0);
+          state._nextModelId = maxId + 1;
+        } else {
+          state._nextModelId = 1;
+        }
+      });
+    },
 
     addMessage: (message) => {
       set((state) => {
@@ -53,21 +65,42 @@ const useStore = create(
       });
     },
 
-    addModel: () => {
+    addModel: () => { // Existing function for SettingsSidebar
       set((state) => {
-        const newId = Math.max(...state.models.map(m => m.id)) + 1;
+        // Ensure _nextModelId is up-to-date if not initialized globally
+        // For simplicity, assume initializeNextModelId is called at app start
+        const newId = state._nextModelId;
+        state._nextModelId++;
         state.models.push({
           id: newId,
-          name: "New Model",
-          value: "deepseek-ai/DeepSeek-R1-0528",
+          name: "New Model", // Or `Model ${newId}`
+          value: "deepseek-ai/DeepSeek-R1-0528", // Consider using modelsList default
           systemPrompt: "You are a helpful AI assistant.",
           temperature: 0.7,
           maxTokens: 16384,
           topP: 1.0,
           minP: 0.0,
-          historySource: {} // Empty dictionary for new models
+          historySource: {}
         });
       });
+    },
+
+    // New action for the NewChatModal
+    addNewModelFromConfig: (configData) => {
+      let newModelIdAssigned;
+      set(state => {
+        newModelIdAssigned = state._nextModelId;
+        state._nextModelId++;
+        
+        const newModelEntry = {
+          ...configData, // Contains name, value, systemPrompt, temp, etc.
+          id: newModelIdAssigned,
+          historySource: configData.historySource || {}, // Ensure historySource exists
+        };
+        state.models.push(newModelEntry);
+      });
+      // Return the newly created model object
+      return get().models.find(m => m.id === newModelIdAssigned);
     },
 
     removeModel: (modelId) => {

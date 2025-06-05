@@ -1213,3 +1213,4 @@ const SettingsSidebar = ({ isOpen, setIsOpen }) => {
 };
 
 export default SettingsSidebar;
+export { JsonRenderer};

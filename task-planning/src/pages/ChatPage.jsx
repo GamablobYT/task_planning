@@ -8,7 +8,8 @@ import useStore from '../store/store';
 import { useNavigate} from 'react-router';
 import apiService from '../utils/api';
 
-function ChatPage({ onNewChat }) {
+// Remove onNewChat from props
+function ChatPage() {
   const { messages, addMessage, updateMessage, clearMessages, models, fetchMessagesForID, chats, fetchChatIDs, activeChatID, setActiveChatID } = useStore();
   const [inputValue, setInputValue] = useState('');
   const [isBotTyping, setIsBotTyping] = useState(false);
@@ -228,40 +229,35 @@ function ChatPage({ onNewChat }) {
     
     try {
       // Variable to hold the active chat ID for this request
-      let activeChatID = chat_ID;
-      let isNewChat = false;
+      // Ensure activeChatID is used directly from store or state
+      const currentActiveChatID = activeChatID; // Use the one from store/state
+      let isNewChat = false; // This logic path will change
 
-      // If no chat ID exists, create a new chat
-      if (!activeChatID) {
-        if (onNewChat) {
-          const newChatID = await onNewChat();
-          console.log("Created new chat ID:", newChatID);
-          
-          // Store the new ID in our variable for immediate use
-          activeChatID = newChatID;
-          isNewChat = true;
-          
-          // Update the state immediately
-          setActiveChatID(newChatID);
-          setChatID(newChatID);
-          
-          // Navigate with the new ID
-          navigate(`/chat/${newChatID}`, { replace: true });
-          
-          // Wait for state updates to propagate
-          await new Promise(resolve => setTimeout(resolve, 300));
-        } else {
-          throw new Error("Unable to create new chat");
-        }
-      } else {
-        console.log("Using existing Chat ID:", activeChatID);
-        // Ensure we're on the correct URL
-        const currentPath = window.location.pathname;
-        const urlChatID = currentPath.split('/')[2] || null;
-        if (urlChatID !== activeChatID) {
-          navigate(`/chat/${activeChatID}`);
-        }
+      // If no chat ID exists, the user should create one via sidebar.
+      // Input should be disabled if !currentActiveChatID
+      if (!currentActiveChatID) {
+        // This case should ideally not happen if UI prevents sending messages without an active chat.
+        // For robustness, you could add an error message or disable input.
+        console.error("No active chat. Please select or create a chat first.");
+        // Optionally, show a user-facing error message
+        addMessage({
+          id: crypto.randomUUID(),
+          content: "Error: No active chat selected. Please create or select a chat from the sidebar.",
+          role: 'bot',
+          isTyping: false,
+          time: Date.now()
+        });
+        return { success: false }; 
       }
+      
+      console.log("Using existing Chat ID:", currentActiveChatID);
+      // Ensure we're on the correct URL
+      const currentPath = window.location.pathname;
+      const urlChatID = currentPath.split('/')[2] || null;
+      if (urlChatID !== currentActiveChatID) {
+        navigate(`/chat/${currentActiveChatID}`);
+      }
+
 
       // Now add the user message
       const newUserMessage = {
@@ -274,7 +270,7 @@ function ChatPage({ onNewChat }) {
 
       try {
         const sendingMessageResponse = await apiService.post('chats/save-chat/', {
-          chat_id: activeChatID,
+          chat_id: currentActiveChatID, // Use currentActiveChatID
           message: {
             role: 'user',
             content: message
@@ -303,7 +299,7 @@ function ChatPage({ onNewChat }) {
         time: Date.now()
       });
 
-      // Use fetch for streaming - with the activeChatID
+      // Use fetch for streaming - with the currentActiveChatID
       const response = await fetch('http://127.0.0.1:5000/chat', {
         method: 'POST',
         headers: {
@@ -311,8 +307,8 @@ function ChatPage({ onNewChat }) {
         },
         body: JSON.stringify({
           message: message,
-          model: models,
-          chat_id: activeChatID
+          model: models, // This sends all configured models
+          chat_id: currentActiveChatID // Use currentActiveChatID
         })
       });
       
@@ -341,7 +337,7 @@ function ChatPage({ onNewChat }) {
           for (let i = 0; i < botMessageIds.length; i++) {
             try {
               const response = await apiService.post('chats/save-chat/', {
-                chat_id: activeChatID,
+                chat_id: currentActiveChatID, // Use currentActiveChatID
                 message: {
                   role: 'assistant',
                   content: accumulatedTexts[i]
@@ -354,8 +350,9 @@ function ChatPage({ onNewChat }) {
           }
 
           // Handle chat naming for new chats or chats without proper names
-          if (isNewChat || shouldUpdateChatName(activeChatID)) {
-            await chatNameHandling(accumulatedTexts[1], activeChatID);
+          // isNewChat will be false here as chat creation is separate
+          if (shouldUpdateChatName(currentActiveChatID)) {
+            await chatNameHandling(accumulatedTexts[0] || accumulatedTexts[1] || message, currentActiveChatID); // Use first available text for naming
           }
 
           break;
@@ -469,7 +466,13 @@ function ChatPage({ onNewChat }) {
   };
 
   const handleSendMessage = async () => {
-    if (inputValue.trim() === '') return;
+    if (inputValue.trim() === '' || !activeChatID) { // Add check for activeChatID
+        if(!activeChatID) {
+            console.warn("Cannot send message: No active chat.");
+            // Optionally, show a toast or alert to the user
+        }
+        return;
+    }
 
     const messageID = crypto.randomUUID(); // Use uuid4 for unique ID
     const messageContent = inputValue;
@@ -496,6 +499,7 @@ function ChatPage({ onNewChat }) {
           inputValue={inputValue} 
           setInputValue={setInputValue} 
           handleSendMessage={handleSendMessage} 
+          disabled={!activeChatID} // Optionally disable input if no active chat
         />
         
         {/* Floating Action Buttons */}

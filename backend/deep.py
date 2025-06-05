@@ -58,7 +58,7 @@ def get_chat_name():
     response = gemini_client.models.generate_content(
         model=model,
         config= types.GenerateContentConfig(
-            system_instruction="Your job is to create a small 4-5 word Chat Title based on the prompt"
+            system_instruction="Your job is to create a small 4-5 word Chat Title based on the message"
         ),
         contents=prompt
     )

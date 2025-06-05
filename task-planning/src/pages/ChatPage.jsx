@@ -355,7 +355,7 @@ function ChatPage({ onNewChat }) {
 
           // Handle chat naming for new chats or chats without proper names
           if (isNewChat || shouldUpdateChatName(activeChatID)) {
-            await chatNameHandling(message, activeChatID);
+            await chatNameHandling(accumulatedTexts[1], activeChatID);
           }
 
           break;

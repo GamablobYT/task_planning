@@ -483,6 +483,7 @@ const SettingsSidebar = ({ isOpen, setIsOpen }) => {
   } = useStore();
   
   const sidebarRef = useRef(null);
+  const fileInputRef = useRef(null);
   const [expandedModels, setExpandedModels] = useState(new Set([1])); // Default expand first model
   const [isJsonMode, setIsJsonMode] = useState({});
   const [parsedJson, setParsedJson] = useState({});
@@ -558,6 +559,92 @@ const SettingsSidebar = ({ isOpen, setIsOpen }) => {
     updateModelSetting(modelId, 'maxTokens', 16384);
     updateModelSetting(modelId, 'topP', 1.0);
     updateModelSetting(modelId, 'minP', 0.0);
+  };
+
+  const handleExportSystemPrompt = (modelId) => {
+    const model = models.find(m => m.id === modelId);
+    if (!model?.systemPrompt) return;
+
+    const hasValidJson = checkHasValidJson(model.systemPrompt);
+    const fileName = `${model.name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_system_prompt`;
+    
+    if (hasValidJson) {
+      // Export as JSON
+      const blob = new Blob([model.systemPrompt], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${fileName}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } else {
+      // Export as TXT
+      const blob = new Blob([model.systemPrompt], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${fileName}.txt`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+  };
+
+  const handleImportSystemPrompt = (modelId) => {
+    fileInputRef.current?.click();
+    fileInputRef.current.onchange = (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const content = e.target.result;
+        const isJsonFile = file.name.toLowerCase().endsWith('.json');
+        
+        if (isJsonFile) {
+          try {
+            const parsed = JSON.parse(content);
+            if (typeof parsed === 'object' && parsed !== null) {
+              // Validate JSON with backend
+              try {
+                const response = await apiService.post("/chats/validate-json/", parsed);
+                if (response.status === 200) {
+                  updateModelSetting(modelId, 'systemPrompt', content);
+                  setValidationError(null);
+                  setShowValidationError(false);
+                }
+              } catch (error) {
+                console.error("JSON validation failed on backend:", error);
+                let errorMessage = "JSON validation failed. Please check the structure.";
+                if (error?.data?.details) {
+                  errorMessage = error.data.details.map(d => `${d.loc.join('.')}: ${d.msg}`).join('; ');
+                } else if (error?.data?.error) {
+                  errorMessage = error.data.error;
+                }
+                setValidationError(errorMessage);
+                setShowValidationError(true);
+              }
+            } else {
+              setValidationError('Invalid JSON format: Not an object.');
+              setShowValidationError(true);
+            }
+          } catch (error) {
+            setValidationError('Invalid JSON: Could not parse the file.');
+            setShowValidationError(true);
+          }
+        } else {
+          // Import as text
+          updateModelSetting(modelId, 'systemPrompt', content);
+        }
+      };
+      reader.readAsText(file);
+      
+      // Reset file input
+      event.target.value = '';
+    };
   };
 
   const handleJsonDataChange = async (modelId, path, key, value, isDelete = false) => {
@@ -729,6 +816,14 @@ const SettingsSidebar = ({ isOpen, setIsOpen }) => {
         title="Validation Error"
         message={validationError}
         duration={5000}
+      />
+
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".txt,.json"
+        style={{ display: 'none' }}
       />
       
       <div
@@ -927,9 +1022,34 @@ const SettingsSidebar = ({ isOpen, setIsOpen }) => {
 
                       {/* System Prompt */}
                       <div className="space-y-2">
-                        <label className="block text-sm font-medium text-slate-200">
-                          System Prompt
-                        </label>
+                        <div className="flex items-center justify-between">
+                          <label className="block text-sm font-medium text-slate-200">
+                            System Prompt
+                          </label>
+                          <div className="flex gap-1">
+                            <button
+                              onClick={() => handleImportSystemPrompt(model.id)}
+                              className="text-xs bg-blue-500/20 text-blue-300 px-2 py-1 rounded hover:bg-blue-500/30 transition-colors flex items-center gap-1"
+                              title="Import from file (.txt or .json)"
+                            >
+                              <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM6.293 6.707a1 1 0 010-1.414l3-3a1 1 0 011.414 0l3 3a1 1 0 01-1.414 1.414L11 5.414V13a1 1 0 11-2 0V5.414L7.707 6.707a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                              </svg>
+                              Import
+                            </button>
+                            <button
+                              onClick={() => handleExportSystemPrompt(model.id)}
+                              className="text-xs bg-purple-500/20 text-purple-300 px-2 py-1 rounded hover:bg-purple-500/30 transition-colors flex items-center gap-1"
+                              title="Export to file"
+                              disabled={!model.systemPrompt}
+                            >
+                              <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
+                              </svg>
+                              Export
+                            </button>
+                          </div>
+                        </div>
                         
                         {(hasValidJson || modelIsJsonMode) && (
                           <div className="flex gap-2 mb-2">

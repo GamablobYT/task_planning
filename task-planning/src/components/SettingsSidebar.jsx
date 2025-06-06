@@ -818,6 +818,36 @@ const SettingsSidebar = ({ isOpen, setIsOpen, onAddModelRequest }) => {
     }
   };
 
+  const handleExportConfig = () => {
+    const savedConfigRaw = localStorage.getItem('savedModelConfig');
+    if (savedConfigRaw) {
+      try {
+        // Ensure it's a valid JSON string for the blob
+        const parsedConfig = JSON.parse(savedConfigRaw);
+        const configJson = JSON.stringify(parsedConfig, null, 2); // Pretty print
+        const blob = new Blob([configJson], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'model_config.json';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } catch (error) {
+        console.error("Error exporting configuration:", error);
+        // Optionally, show an error toast to the user
+        setValidationError("Failed to export configuration. The saved data might be corrupted.");
+        setShowValidationError(true);
+      }
+    } else {
+      console.warn("No saved configuration to export.");
+      // Optionally, show a toast or alert
+      setValidationError("No configuration found in local storage to export.");
+      setShowValidationError(true);
+    }
+  };
+
   const handleShowExamples = (model) => {
     setExamplesModalContent(model);
     setIsExamplesModalOpen(true);
@@ -1295,6 +1325,19 @@ const SettingsSidebar = ({ isOpen, setIsOpen, onAddModelRequest }) => {
                 <path d="M7.707 10.293a1 1 0 10-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 11.586V6h5a2 2 0 012 2v7a2 2 0 01-2 2H4a2 2 0 01-2-2V8a2 2 0 012-2h5v5.586l-1.293-1.293zM9 4a1 1 0 012 0v2H9V4z" />
               </svg>
               Save Configuration
+            </button>
+
+            {/* Export Config Button */}
+            <button
+              onClick={handleExportConfig}
+              className="w-full mt-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg p-3
+                         text-sm font-medium transition-colors duration-200
+                         flex items-center justify-center gap-2"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
+              </svg>
+              Export Configuration
             </button>
           </div>
         </div>

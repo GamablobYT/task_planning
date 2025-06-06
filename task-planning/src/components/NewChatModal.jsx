@@ -68,7 +68,7 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation, creationMode }) => 
       setConfigPromptStep('creating');
       // Reset all form states when starting 'creating' step or if not prompting
       setCurrentStep(1);
-      setTotalSteps(3);
+      // setTotalSteps(3); // Initial total steps, will be adjusted by effects
       setConfigName('My Custom Model');
       setSelectedModelValue(modelsList[Object.keys(modelsList)[0]]);
       setTemperature(0.7);
@@ -86,7 +86,7 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation, creationMode }) => 
       setIsPromptEnabled(false);
       setIsModelsEnabled(false);
       setSelectedHistoryModels([]);
-      setIsFewShotPossible(false);
+      setIsFewShotPossible(false); // Reset this, will be determined at step 3
       setTemplateIO({ inputs: [], outputs: [] });
       setSelectedIO({ inputs: new Set(), outputs: new Set() });
       setInitialInputValues({}); // Reset new state
@@ -96,7 +96,7 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation, creationMode }) => 
       // Full reset on close
       setConfigPromptStep(null);
       setCurrentStep(1);
-      setTotalSteps(3);
+      // setTotalSteps(3); // Initial total steps
       setConfigName('My Custom Model');
       setSelectedModelValue(modelsList[Object.keys(modelsList)[0]]);
       setTemperature(0.7);
@@ -123,12 +123,11 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation, creationMode }) => 
     }
   }, [isOpen, creationMode]);
 
-  // EFFECT: Check for few-shot possibility when in Step 3
+  // EFFECT: Determine if few-shot is possible based on prompt content
   useEffect(() => {
-    if (currentStep === 3) {
+    if (currentStep === 3) { // Only re-evaluate when system prompt content is being finalized at step 3
       let potentialJson = parsedJsonToEdit;
-      // If not using JSON renderer, try parsing the text content
-      if (!potentialJson) {
+      if (!potentialJson && systemPromptContent) { // Check systemPromptContent if parsedJsonToEdit is not set
         try {
           potentialJson = JSON.parse(systemPromptContent);
         } catch {
@@ -141,15 +140,27 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation, creationMode }) => 
             potentialJson.outputs && typeof potentialJson.outputs === 'object' && !Array.isArray(potentialJson.outputs) &&
             (Object.keys(potentialJson.inputs).length > 0 || Object.keys(potentialJson.outputs).length > 0);
 
-      if (hasValidIOStructure) {
-        setIsFewShotPossible(true);
-        setTotalSteps(6); // Updated total steps
-      } else {
+      setIsFewShotPossible(hasValidIOStructure);
+    } else if (currentStep < 3) {
+        // If navigating back before step 3, reset few-shot possibility
+        // This ensures that if a user goes back and changes the prompt type, the state is fresh
         setIsFewShotPossible(false);
-        setTotalSteps(3);
-      }
     }
   }, [currentStep, parsedJsonToEdit, systemPromptContent]);
+
+  // EFFECT: Adjust totalSteps based on isFewShotPossible and creationMode
+  useEffect(() => {
+    if (isFewShotPossible) {
+      if (creationMode === 'initial') {
+        setTotalSteps(6); // Includes Initialize Inputs step
+      } else { // creationMode === 'add'
+        setTotalSteps(5); // Skips Initialize Inputs step
+      }
+    } else {
+      setTotalSteps(3); // Basic 3 steps
+    }
+  }, [isFewShotPossible, creationMode]);
+
 
   const handleNext = () => {
     if (currentStep === 1) {
@@ -160,7 +171,6 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation, creationMode }) => 
       setHistorySource(compiledHistorySource);
       setCurrentStep(2);
     } else if (currentStep === 2) {
-      // Move to editor (Step 3)
       setJsonValidationError(null);
       if (systemPromptContent) {
         try {
@@ -184,32 +194,34 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation, creationMode }) => 
         setIsJsonPrompt(false);
       }
       setCurrentStep(3);
-    } else if (currentStep === 3) { // From Editor to I/O Selection
+    } else if (currentStep === 3) { // From Editor to I/O Selection (Step 4)
         let finalJson = parsedJsonToEdit;
         if (!finalJson) try { finalJson = JSON.parse(systemPromptContent); } catch { finalJson = null; }
 
-        if (finalJson) {
+        if (finalJson) { // This implies isFewShotPossible is true
             const inputKeys = Object.keys(finalJson.inputs || {});
             const outputKeys = Object.keys(finalJson.outputs || {});
             setTemplateIO({ inputs: inputKeys, outputs: outputKeys });
-            setSelectedIO({ inputs: new Set(inputKeys), outputs: new Set(outputKeys) });
+            setSelectedIO({ inputs: new Set(inputKeys), outputs: new Set(outputKeys) }); // Default select all
         }
         setCurrentStep(4);
-    } else if (currentStep === 4) { // From I/O Selection to Add Examples (NEW Step 5)
-        // Initialize currentExample based on selectedIO for the "Add Examples" step
+    } else if (currentStep === 4) { // From I/O Selection to Add Examples (Step 5)
         const exampleShape = { inputs: {}, outputs: {} };
         selectedIO.inputs.forEach(key => exampleShape.inputs[key] = '');
         selectedIO.outputs.forEach(key => exampleShape.outputs[key] = '');
         setCurrentExample(exampleShape);
-        setCurrentStep(5); // Move to Add Examples step
-    } else if (currentStep === 5) { // From Add Examples to Initialize Inputs (NEW Step 6)
-        // Initialize initialInputValues based on selectedIO.inputs for the "Initialize Inputs" step
-        const initialVals = {};
-        selectedIO.inputs.forEach(key => {
-            initialVals[key] = ''; // Initialize with empty strings
-        });
-        setInitialInputValues(initialVals);
-        setCurrentStep(6); // Move to Initialize Inputs step
+        setCurrentStep(5);
+    } else if (currentStep === 5) { // From Add Examples (Step 5)
+        // This path is only for creationMode === 'initial'
+        if (creationMode === 'initial') {
+            const initialVals = {};
+            selectedIO.inputs.forEach(key => {
+                initialVals[key] = '';
+            });
+            setInitialInputValues(initialVals);
+            setCurrentStep(6); // Move to Initialize Inputs step (Step 6)
+        }
+        // If creationMode === 'add', the button will call handleCreateChat directly
     }
   };
 
@@ -232,7 +244,7 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation, creationMode }) => 
     setParsedJsonToEdit(null);
     setIsJsonPrompt(false);
     setJsonValidationError(null);
-    setCurrentStep(3);
+    setCurrentStep(3); // This will trigger isFewShotPossible check
   };
 
   const handleJsonDataChange = async (path, key, value, isDelete = false) => {
@@ -246,6 +258,7 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation, creationMode }) => 
     setParsedJsonToEdit(newData);
     setSystemPromptContent(JSON.stringify(newData, null, 2));
     setJsonValidationError(null);
+    // isFewShotPossible will be re-evaluated by its useEffect due to parsedJsonToEdit change
     return true;
   };
 
@@ -258,32 +271,31 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation, creationMode }) => 
           loadModelsFromConfig(savedConfig);
           const firstModel = useStore.getState().models[0];
           if (firstModel) {
-            onFinalizeCreation(firstModel, 'initial'); // Pass 'initial' mode
+            onFinalizeCreation(firstModel, 'initial');
           } else {
-            // Should not happen if loadModelsFromConfig ensures a default
             console.error("Loaded config resulted in no models.");
-            setConfigPromptStep('creating'); // Fallback to fresh creation
-            // Reset form fields here as we are now switching to 'creating'
+            setConfigPromptStep('creating'); 
             setCurrentStep(1);
-            // ... (full reset of form fields)
+            // ... (full reset of form fields handled by main useEffect)
             return;
           }
         } else {
-          setConfigPromptStep('creating'); // Fallback if config was empty/invalid
+          setConfigPromptStep('creating'); 
         }
       } catch (e) {
         console.error("Error processing saved config:", e);
-        setConfigPromptStep('creating'); // Fallback
+        setConfigPromptStep('creating');
       }
     }
-    onClose(); // Close modal after loading or attempting to load
+    onClose(); 
   };
 
   const handleStartFresh = () => {
     setConfigPromptStep('creating');
-    // Reset form fields as we are starting fresh
+    // Reset form fields. Most are handled by the main useEffect when isOpen changes,
+    // but explicitly setting currentStep and isFewShotPossible here ensures correct state.
     setCurrentStep(1);
-    setTotalSteps(3); // Initial total steps
+    // totalSteps will be reset by its own effect based on isFewShotPossible & creationMode
     setConfigName('My Custom Model');
     setSelectedModelValue(modelsList[Object.keys(modelsList)[0]]);
     setTemperature(0.7);
@@ -294,17 +306,17 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation, creationMode }) => 
     setIsJsonPrompt(false);
     setParsedJsonToEdit(null);
     setJsonValidationError(null);
-    if (fileInputRef.current) fileInputRefRef.current.value = '';
+    if (fileInputRef.current) fileInputRef.current.value = ''; // Corrected typo here
     setHistorySource({});
     setIsHistoryEnabled(false);
     setHistoryCount(1);
     setIsPromptEnabled(false);
     setIsModelsEnabled(false);
     setSelectedHistoryModels([]);
-    setIsFewShotPossible(false);
+    setIsFewShotPossible(false); // Explicitly reset
     setTemplateIO({ inputs: [], outputs: [] });
     setSelectedIO({ inputs: new Set(), outputs: new Set() });
-    setInitialInputValues({}); // Reset new state
+    setInitialInputValues({});
     setFewShotExamples([]);
     setCurrentExample(null);
   };
@@ -330,18 +342,19 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation, creationMode }) => 
       if (fewShotExamples.length > 0) {
         newModelConfigurationData.examples = fewShotExamples;
       }
-      // Add initialInputValues regardless of whether examples are present, if few-shot was possible
+      // initialInputValues will be populated if Step 6 was run (creationMode='initial'),
+      // or an empty object {} if Step 6 was skipped (creationMode='add').
+      // This correctly stores it as a top-level item.
       newModelConfigurationData.initialInputs = initialInputValues;
     }
 
-    // Determine if existing models should be replaced
     const shouldReplaceExisting = creationMode === 'initial';
     const newlyCreatedModel = addNewModelFromConfigStore(newModelConfigurationData, shouldReplaceExisting);
     
     if (newlyCreatedModel) {
-      onFinalizeCreation(newlyCreatedModel, creationMode); // Pass current creationMode
+      onFinalizeCreation(newlyCreatedModel, creationMode);
     } else {
-      onClose();
+      onClose(); // Should ideally not happen if addNewModel always returns something or throws
     }
   };
 
@@ -351,7 +364,6 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation, creationMode }) => 
     );
   };
 
-  // --- RENDER FUNCTIONS FOR NEW STEPS ---
   const handleIOSelection = (type, key, checked) => {
     setSelectedIO(prev => {
         const newSet = new Set(prev[type]);
@@ -393,7 +405,7 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation, creationMode }) => 
     setInitialInputValues(prev => ({ ...prev, [key]: value }));
   };
 
-  const renderStep6_InitializeInputs = () => ( // Renamed from renderStep5_InitializeInputs
+  const renderStep6_InitializeInputs = () => (
     <div className="space-y-6">
       <h3 className="text-lg font-medium text-slate-200">Initialize Input Fields (Optional)</h3>
       <p className="text-slate-400">Provide initial values for the selected input fields. These can be used to start your chat or provide context.</p>
@@ -438,7 +450,7 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation, creationMode }) => 
     setFewShotExamples(prev => prev.filter((_, i) => i !== index));
   };
   
-  const renderStep5_AddExamples = () => ( // Renamed from renderStep6_AddExamples
+  const renderStep5_AddExamples = () => (
     <div className="space-y-6">
         <h3 className="text-lg font-medium text-slate-200">Add Few-Shot Examples (Optional)</h3>
         {currentExample && (
@@ -526,6 +538,7 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation, creationMode }) => 
         <div className="flex-grow overflow-y-auto pr-2 custom-scrollbar">
           {currentStep === 1 && (
             <div className="space-y-4">
+              {/* ... Step 1 content remains the same ... */}
               <div>
                 <label htmlFor="configName" className="block text-sm font-medium text-slate-300">Configuration Name</label>
                 <input type="text" id="configName" value={configName} onChange={(e) => setConfigName(e.target.value)}
@@ -635,6 +648,7 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation, creationMode }) => 
           )}
           {currentStep === 2 && (
             <div className="space-y-4">
+              {/* ... Step 2 content remains the same ... */}
               <p className="text-slate-300">Upload a system prompt template (.txt or .json). If the JSON contains "inputs" and "outputs" objects, you can create few-shot examples in later steps.</p>
               <div>
                 <label htmlFor="promptFile" className="block text-sm font-medium text-slate-300">Upload File</label>
@@ -646,6 +660,7 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation, creationMode }) => 
           )}
           {currentStep === 3 && (
             <div className="space-y-4">
+              {/* ... Step 3 content remains the same ... */}
               <p className="text-slate-300">Edit the system prompt. If it contains valid "inputs" and "outputs" JSON objects, you can proceed to add examples.</p>
               {jsonValidationError && <p className="text-yellow-400 text-sm mb-2">{jsonValidationError}</p>}
               {isJsonPrompt && parsedJsonToEdit ? (
@@ -663,9 +678,9 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation, creationMode }) => 
               )}
             </div>
           )}
-          {currentStep === 4 && renderStep4_IOSelection()}
+          {currentStep === 4 && isFewShotPossible && renderStep4_IOSelection()}
           {currentStep === 5 && isFewShotPossible && renderStep5_AddExamples()}
-          {currentStep === 6 && isFewShotPossible && renderStep6_InitializeInputs()}
+          {currentStep === 6 && isFewShotPossible && creationMode === 'initial' && renderStep6_InitializeInputs()}
         </div>
 
         <div className="mt-6 pt-4 border-t border-slate-700 flex justify-between items-center">
@@ -673,8 +688,8 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation, creationMode }) => 
           <div className="flex gap-3">
             {currentStep > 1 && <button onClick={handleBack} className="px-4 py-2 text-sm font-medium text-slate-300 bg-slate-600 hover:bg-slate-500 rounded-md">Back</button>}
             
-            {/* Step 1 & 2 Navigation */}
-            {(currentStep === 1) && <button onClick={handleNext} className="px-4 py-2 text-sm font-medium text-white bg-sky-600 hover:bg-sky-700 rounded-md">Next</button>}
+            {currentStep === 1 && <button onClick={handleNext} className="px-4 py-2 text-sm font-medium text-white bg-sky-600 hover:bg-sky-700 rounded-md">Next</button>}
+            
             {currentStep === 2 && (
               <>
                 <button onClick={handleSkipUpload} className="px-4 py-2 text-sm font-medium text-slate-300 bg-slate-600 hover:bg-slate-500 rounded-md">Skip & Use Default</button>
@@ -682,7 +697,6 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation, creationMode }) => 
               </>
             )}
 
-            {/* Step 3 (Dynamic Button) */}
             {currentStep === 3 && isFewShotPossible && (
               <button onClick={handleNext} className="px-4 py-2 text-sm font-medium text-white bg-sky-600 hover:bg-sky-700 rounded-md">Next</button>
             )}
@@ -690,10 +704,18 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation, creationMode }) => 
                <button onClick={handleCreateChat} className="px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-md">{finalButtonText}</button>
             )}
 
-            {/* Step 4 & 5 & 6 Navigation */}
             {currentStep === 4 && isFewShotPossible && <button onClick={handleNext} className="px-4 py-2 text-sm font-medium text-white bg-sky-600 hover:bg-sky-700 rounded-md">Next</button>}
-            {currentStep === 5 && isFewShotPossible && <button onClick={handleNext} className="px-4 py-2 text-sm font-medium text-white bg-sky-600 hover:bg-sky-700 rounded-md">Next</button>}
-            {currentStep === 6 && isFewShotPossible && <button onClick={handleCreateChat} className="px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-md">{finalButtonText}</button>}
+            
+            {currentStep === 5 && isFewShotPossible && creationMode === 'initial' && (
+                <button onClick={handleNext} className="px-4 py-2 text-sm font-medium text-white bg-sky-600 hover:bg-sky-700 rounded-md">Next</button>
+            )}
+            {currentStep === 5 && isFewShotPossible && creationMode === 'add' && (
+                <button onClick={handleCreateChat} className="px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-md">{finalButtonText}</button>
+            )}
+            
+            {currentStep === 6 && isFewShotPossible && creationMode === 'initial' && (
+                <button onClick={handleCreateChat} className="px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-md">{finalButtonText}</button>
+            )}
           </div>
         </div>
       </div>

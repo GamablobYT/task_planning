@@ -5,8 +5,10 @@ import apiService from '../utils/api'; // For JSON validation if needed
 import { JsonRenderer } from './SettingsSidebar';
 import { TrashIcon } from '@heroicons/react/24/outline'; // Import TrashIcon
 
-const NewChatModal = ({ isOpen, onClose, onFinalizeCreation }) => {
-  const { models: existingModels } = useStore();
+const NewChatModal = ({ isOpen, onClose, onFinalizeCreation, creationMode }) => {
+  const { models: existingModels, loadModelsFromConfig, addNewModelFromConfig: addNewModelFromConfigStore } = useStore();
+  
+  const [configPromptStep, setConfigPromptStep] = useState(null); // 'prompt_load', 'creating'
   const [currentStep, setCurrentStep] = useState(1);
   const [totalSteps, setTotalSteps] = useState(3); // Will be dynamic
   
@@ -38,14 +40,33 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation }) => {
   const [templateIO, setTemplateIO] = useState({ inputs: [], outputs: [] });
   const [selectedIO, setSelectedIO] = useState({ inputs: new Set(), outputs: new Set() });
 
-  // Step 5 State (Add Examples)
+  // Step 5 State (Add Examples) - Was Step 6
   const [fewShotExamples, setFewShotExamples] = useState([]);
   const [currentExample, setCurrentExample] = useState(null);
 
+  // Step 6 State (Initialize Inputs) - Was Step 5
+  const [initialInputValues, setInitialInputValues] = useState({});
+
 
   useEffect(() => {
-    if (!isOpen) {
-      // Full reset on close
+    if (isOpen) {
+      const savedConfigRaw = localStorage.getItem('savedModelConfig');
+      if (savedConfigRaw && creationMode === 'initial') {
+        try {
+          const savedConfig = JSON.parse(savedConfigRaw);
+          if (savedConfig && savedConfig.length > 0) {
+            setConfigPromptStep('prompt_load');
+            // Don't reset form fields yet, wait for user choice
+            return; // Exit early to show prompt
+          }
+        } catch (e) {
+          console.error("Error parsing saved config from localStorage", e);
+          localStorage.removeItem('savedModelConfig'); // Clear invalid config
+        }
+      }
+      // Default to creating if no valid saved config or not in 'initial' mode
+      setConfigPromptStep('creating');
+      // Reset all form states when starting 'creating' step or if not prompting
       setCurrentStep(1);
       setTotalSteps(3);
       setConfigName('My Custom Model');
@@ -68,10 +89,39 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation }) => {
       setIsFewShotPossible(false);
       setTemplateIO({ inputs: [], outputs: [] });
       setSelectedIO({ inputs: new Set(), outputs: new Set() });
+      setInitialInputValues({}); // Reset new state
+      setFewShotExamples([]);
+      setCurrentExample(null);
+    } else {
+      // Full reset on close
+      setConfigPromptStep(null);
+      setCurrentStep(1);
+      setTotalSteps(3);
+      setConfigName('My Custom Model');
+      setSelectedModelValue(modelsList[Object.keys(modelsList)[0]]);
+      setTemperature(0.7);
+      setMaxTokens(16384);
+      setTopP(1.0);
+      setMinP(0.0);
+      setSystemPromptContent('');
+      setIsJsonPrompt(false);
+      setParsedJsonToEdit(null);
+      setJsonValidationError(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      setHistorySource({});
+      setIsHistoryEnabled(false);
+      setHistoryCount(1);
+      setIsPromptEnabled(false);
+      setIsModelsEnabled(false);
+      setSelectedHistoryModels([]);
+      setIsFewShotPossible(false);
+      setTemplateIO({ inputs: [], outputs: [] });
+      setSelectedIO({ inputs: new Set(), outputs: new Set() });
+      setInitialInputValues({}); // Reset new state
       setFewShotExamples([]);
       setCurrentExample(null);
     }
-  }, [isOpen]);
+  }, [isOpen, creationMode]);
 
   // EFFECT: Check for few-shot possibility when in Step 3
   useEffect(() => {
@@ -93,7 +143,7 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation }) => {
 
       if (hasValidIOStructure) {
         setIsFewShotPossible(true);
-        setTotalSteps(5);
+        setTotalSteps(6); // Updated total steps
       } else {
         setIsFewShotPossible(false);
         setTotalSteps(3);
@@ -145,12 +195,21 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation }) => {
             setSelectedIO({ inputs: new Set(inputKeys), outputs: new Set(outputKeys) });
         }
         setCurrentStep(4);
-    } else if (currentStep === 4) { // From I/O Selection to Add Examples
+    } else if (currentStep === 4) { // From I/O Selection to Add Examples (NEW Step 5)
+        // Initialize currentExample based on selectedIO for the "Add Examples" step
         const exampleShape = { inputs: {}, outputs: {} };
         selectedIO.inputs.forEach(key => exampleShape.inputs[key] = '');
         selectedIO.outputs.forEach(key => exampleShape.outputs[key] = '');
         setCurrentExample(exampleShape);
-        setCurrentStep(5);
+        setCurrentStep(5); // Move to Add Examples step
+    } else if (currentStep === 5) { // From Add Examples to Initialize Inputs (NEW Step 6)
+        // Initialize initialInputValues based on selectedIO.inputs for the "Initialize Inputs" step
+        const initialVals = {};
+        selectedIO.inputs.forEach(key => {
+            initialVals[key] = ''; // Initialize with empty strings
+        });
+        setInitialInputValues(initialVals);
+        setCurrentStep(6); // Move to Initialize Inputs step
     }
   };
 
@@ -190,6 +249,65 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation }) => {
     return true;
   };
 
+  const handleLoadConfig = () => {
+    const savedConfigRaw = localStorage.getItem('savedModelConfig');
+    if (savedConfigRaw) {
+      try {
+        const savedConfig = JSON.parse(savedConfigRaw);
+        if (savedConfig && savedConfig.length > 0) {
+          loadModelsFromConfig(savedConfig);
+          const firstModel = useStore.getState().models[0];
+          if (firstModel) {
+            onFinalizeCreation(firstModel, 'initial'); // Pass 'initial' mode
+          } else {
+            // Should not happen if loadModelsFromConfig ensures a default
+            console.error("Loaded config resulted in no models.");
+            setConfigPromptStep('creating'); // Fallback to fresh creation
+            // Reset form fields here as we are now switching to 'creating'
+            setCurrentStep(1);
+            // ... (full reset of form fields)
+            return;
+          }
+        } else {
+          setConfigPromptStep('creating'); // Fallback if config was empty/invalid
+        }
+      } catch (e) {
+        console.error("Error processing saved config:", e);
+        setConfigPromptStep('creating'); // Fallback
+      }
+    }
+    onClose(); // Close modal after loading or attempting to load
+  };
+
+  const handleStartFresh = () => {
+    setConfigPromptStep('creating');
+    // Reset form fields as we are starting fresh
+    setCurrentStep(1);
+    setTotalSteps(3); // Initial total steps
+    setConfigName('My Custom Model');
+    setSelectedModelValue(modelsList[Object.keys(modelsList)[0]]);
+    setTemperature(0.7);
+    setMaxTokens(16384);
+    setTopP(1.0);
+    setMinP(0.0);
+    setSystemPromptContent('');
+    setIsJsonPrompt(false);
+    setParsedJsonToEdit(null);
+    setJsonValidationError(null);
+    if (fileInputRef.current) fileInputRefRef.current.value = '';
+    setHistorySource({});
+    setIsHistoryEnabled(false);
+    setHistoryCount(1);
+    setIsPromptEnabled(false);
+    setIsModelsEnabled(false);
+    setSelectedHistoryModels([]);
+    setIsFewShotPossible(false);
+    setTemplateIO({ inputs: [], outputs: [] });
+    setSelectedIO({ inputs: new Set(), outputs: new Set() });
+    setInitialInputValues({}); // Reset new state
+    setFewShotExamples([]);
+    setCurrentExample(null);
+  };
 
   const handleCreateChat = () => {
     let finalSystemPrompt = systemPromptContent;
@@ -208,14 +326,20 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation }) => {
       historySource: historySource,
     };
 
-    if (isFewShotPossible && fewShotExamples.length > 0) {
-      newModelConfigurationData.examples = fewShotExamples;
+    if (isFewShotPossible) {
+      if (fewShotExamples.length > 0) {
+        newModelConfigurationData.examples = fewShotExamples;
+      }
+      // Add initialInputValues regardless of whether examples are present, if few-shot was possible
+      newModelConfigurationData.initialInputs = initialInputValues;
     }
 
-    const newlyCreatedModel = useStore.getState().addNewModelFromConfig(newModelConfigurationData);
+    // Determine if existing models should be replaced
+    const shouldReplaceExisting = creationMode === 'initial';
+    const newlyCreatedModel = addNewModelFromConfigStore(newModelConfigurationData, shouldReplaceExisting);
     
     if (newlyCreatedModel) {
-      onFinalizeCreation(newlyCreatedModel);
+      onFinalizeCreation(newlyCreatedModel, creationMode); // Pass current creationMode
     } else {
       onClose();
     }
@@ -238,8 +362,8 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation }) => {
 
   const renderStep4_IOSelection = () => (
     <div className="space-y-4">
-        <h3 className="text-lg font-medium text-slate-200">Select Input/Output Fields</h3>
-        <p className="text-slate-400">Choose which fields from your template you want to use for providing examples.</p>
+        <h3 className="text-lg font-medium text-slate-200">Select Input/Output Fields for Examples</h3>
+        <p className="text-slate-400">Choose which fields from your template you want to use for providing examples and initial values.</p>
         <div className="space-y-2">
             <label className="block text-sm font-medium text-sky-400">Inputs</label>
             <div className="bg-slate-700/50 p-3 rounded-lg space-y-2 border border-slate-600">
@@ -265,6 +389,35 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation }) => {
     </div>
   );
   
+  const handleInitialInputChange = (key, value) => {
+    setInitialInputValues(prev => ({ ...prev, [key]: value }));
+  };
+
+  const renderStep6_InitializeInputs = () => ( // Renamed from renderStep5_InitializeInputs
+    <div className="space-y-6">
+      <h3 className="text-lg font-medium text-slate-200">Initialize Input Fields (Optional)</h3>
+      <p className="text-slate-400">Provide initial values for the selected input fields. These can be used to start your chat or provide context.</p>
+      {Array.from(selectedIO.inputs).length > 0 ? (
+        <div className="p-4 bg-slate-700/50 rounded-lg border border-slate-600 space-y-4">
+          {Array.from(selectedIO.inputs).map(key => (
+            <div key={`init-in-${key}`}>
+              <label htmlFor={`init-in-${key}`} className="block text-sm text-slate-300 mb-1 font-medium">{key}</label>
+              <textarea 
+                id={`init-in-${key}`} 
+                value={initialInputValues[key] || ''} 
+                onChange={e => handleInitialInputChange(key, e.target.value)} 
+                className="w-full h-24 bg-slate-700 border border-slate-600 rounded-md p-2 text-slate-100 placeholder-slate-400 resize-y focus:ring-2 focus:ring-sky-500 focus:border-transparent"
+                placeholder={`Initial value for ${key}...`}
+              />
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-slate-500 text-sm italic">No input fields were selected for initialization.</p>
+      )}
+    </div>
+  );
+
   const handleExampleFieldChange = (type, key, value) => {
     setCurrentExample(prev => ({ ...prev, [type]: { ...prev[type], [key]: value } }));
   };
@@ -285,9 +438,9 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation }) => {
     setFewShotExamples(prev => prev.filter((_, i) => i !== index));
   };
   
-  const renderStep5_AddExamples = () => (
+  const renderStep5_AddExamples = () => ( // Renamed from renderStep6_AddExamples
     <div className="space-y-6">
-        <h3 className="text-lg font-medium text-slate-200">Add Few-Shot Examples</h3>
+        <h3 className="text-lg font-medium text-slate-200">Add Few-Shot Examples (Optional)</h3>
         {currentExample && (
             <div className="p-4 bg-slate-700/50 rounded-lg border border-slate-600 space-y-4">
                 <h4 className="font-semibold text-slate-300">New Example</h4>
@@ -318,7 +471,7 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation }) => {
             <h4 className="font-semibold text-slate-300">Added Examples ({fewShotExamples.length})</h4>
             {fewShotExamples.length === 0 && <p className="text-slate-500 text-sm italic">No examples added yet.</p>}
             {fewShotExamples.map((ex, index) => (
-                <div key={index} className="p-3 bg-slate-900/50 rounded-lg relative border border-slate-700">
+                <div key={index} className="p-3 bg-slate-900/50 rounded-lg relative border border-slate-700 text-slate-300">
                     <button onClick={() => handleRemoveExample(index)} className="absolute top-2 right-2 text-slate-400 hover:text-red-400 p-1 rounded-full hover:bg-slate-700">
                         <TrashIcon className="w-4 h-4" />
                     </button>
@@ -336,6 +489,33 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation }) => {
   if (!isOpen) return null;
   const availableModelsForHistory = existingModels;
 
+  const finalButtonText = creationMode === 'add' ? 'Add Model' : 'Create Chat';
+
+  if (configPromptStep === 'prompt_load') {
+    return (
+      <div className="fixed inset-0 bg-slate-900 bg-opacity-75 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div className="bg-slate-800 p-6 rounded-lg shadow-2xl w-full max-w-md">
+          <h2 className="text-xl font-semibold text-sky-400 mb-4">Load Configuration?</h2>
+          <p className="text-slate-300 mb-6">A saved model configuration was found. Would you like to load it or start fresh?</p>
+          <div className="flex justify-end gap-4">
+            <button
+              onClick={handleStartFresh}
+              className="px-4 py-2 text-sm font-medium text-slate-300 bg-slate-700 hover:bg-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-800 focus:ring-sky-500"
+            >
+              Start Fresh
+            </button>
+            <button
+              onClick={handleLoadConfig}
+              className="px-4 py-2 text-sm font-medium text-white bg-sky-600 hover:bg-sky-700 rounded-md"
+            >
+              Load Saved Config
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="fixed inset-0 bg-slate-900 bg-opacity-75 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div className="bg-slate-800 p-6 rounded-lg shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
@@ -349,12 +529,12 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation }) => {
               <div>
                 <label htmlFor="configName" className="block text-sm font-medium text-slate-300">Configuration Name</label>
                 <input type="text" id="configName" value={configName} onChange={(e) => setConfigName(e.target.value)}
-                       className="mt-1 block w-full bg-slate-700 border border-slate-600 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm" />
+                       className="mt-1 block w-full bg-slate-700 border border-slate-600 text-white rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm" />
               </div>
               <div>
                 <label htmlFor="modelValue" className="block text-sm font-medium text-slate-300">Base Model</label>
                 <select id="modelValue" value={selectedModelValue} onChange={(e) => setSelectedModelValue(e.target.value)}
-                        className="mt-1 block w-full bg-slate-700 border border-slate-600 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm">
+                        className="mt-1 block w-full bg-slate-700 border border-slate-600 text-white rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm">
                   {Object.entries(modelsList).map(([label, value]) => (
                     <option key={value} value={value}>{label}</option>
                   ))}
@@ -368,7 +548,7 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation }) => {
                <div>
                 <label className="block text-sm font-medium text-slate-300">Max Tokens: {maxTokens}</label>
                 <input type="number" min="1" value={maxTokens} onChange={e => setMaxTokens(parseInt(e.target.value))}
-                 className="mt-1 block w-full bg-slate-700 border border-slate-600 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm" />
+                 className="mt-1 block w-full bg-slate-700 border border-slate-600 text-white rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-300">Top P: {topP.toFixed(2)}</label>
@@ -484,7 +664,8 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation }) => {
             </div>
           )}
           {currentStep === 4 && renderStep4_IOSelection()}
-          {currentStep === 5 && renderStep5_AddExamples()}
+          {currentStep === 5 && isFewShotPossible && renderStep5_AddExamples()}
+          {currentStep === 6 && isFewShotPossible && renderStep6_InitializeInputs()}
         </div>
 
         <div className="mt-6 pt-4 border-t border-slate-700 flex justify-between items-center">
@@ -506,12 +687,13 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation }) => {
               <button onClick={handleNext} className="px-4 py-2 text-sm font-medium text-white bg-sky-600 hover:bg-sky-700 rounded-md">Next</button>
             )}
             {currentStep === 3 && !isFewShotPossible && (
-               <button onClick={handleCreateChat} className="px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-md">Create Chat</button>
+               <button onClick={handleCreateChat} className="px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-md">{finalButtonText}</button>
             )}
 
-            {/* Step 4 & 5 Navigation */}
-            {currentStep === 4 && <button onClick={handleNext} className="px-4 py-2 text-sm font-medium text-white bg-sky-600 hover:bg-sky-700 rounded-md">Next</button>}
-            {currentStep === 5 && <button onClick={handleCreateChat} className="px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-md">Create Chat</button>}
+            {/* Step 4 & 5 & 6 Navigation */}
+            {currentStep === 4 && isFewShotPossible && <button onClick={handleNext} className="px-4 py-2 text-sm font-medium text-white bg-sky-600 hover:bg-sky-700 rounded-md">Next</button>}
+            {currentStep === 5 && isFewShotPossible && <button onClick={handleNext} className="px-4 py-2 text-sm font-medium text-white bg-sky-600 hover:bg-sky-700 rounded-md">Next</button>}
+            {currentStep === 6 && isFewShotPossible && <button onClick={handleCreateChat} className="px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-md">{finalButtonText}</button>}
           </div>
         </div>
       </div>

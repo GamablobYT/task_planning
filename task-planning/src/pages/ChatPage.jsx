@@ -9,8 +9,8 @@ import { useNavigate} from 'react-router';
 import apiService from '../utils/api';
 
 // Remove onNewChat from props
-function ChatPage() {
-  const { messages, addMessage, updateMessage, clearMessages, models, fetchMessagesForID, chats, fetchChatIDs, activeChatID, setActiveChatID } = useStore();
+function ChatPage({ onAddModelRequest }) {
+  const { messages, addMessage, updateMessage, clearMessages, models, fetchMessagesForID, chats, fetchChatIDs, activeChatID, setActiveChatID, updateChatInitialInput } = useStore();
   const [inputValue, setInputValue] = useState('');
   const [isBotTyping, setIsBotTyping] = useState(false);
   const [chat_ID, setChatID] = useState(activeChatID || null);
@@ -18,6 +18,21 @@ function ChatPage() {
   const [isSwitchingChat, setIsSwitchingChat] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const navigate = useNavigate();
+
+  // State for editable initial inputs
+  const [editableInitialInputs, setEditableInitialInputs] = useState({});
+  const [showInitialInputSaveFeedback, setShowInitialInputSaveFeedback] = useState(false);
+
+  // Get the full active chat object to access initialInputs and examples
+  const activeChat = chats.find(chat => chat.id === activeChatID);
+
+  useEffect(() => {
+    if (activeChat && activeChat.initialInputs) {
+      setEditableInitialInputs(JSON.parse(JSON.stringify(activeChat.initialInputs))); // Deep copy
+    } else {
+      setEditableInitialInputs({});
+    }
+  }, [activeChat, activeChatID]);
 
   // Parse URL and set active chat ID
   useEffect(() => {
@@ -489,12 +504,60 @@ function ChatPage() {
     }
   };
 
+  const handleInitialInputChange = (key, value) => {
+    setEditableInitialInputs(prev => ({ ...prev, [key]: value }));
+  };
+
+  const handleSaveInitialInputs = () => {
+    if (!activeChatID || !activeChat) return;
+    Object.entries(editableInitialInputs).forEach(([key, value]) => {
+      // Only update if the value has actually changed from what's in the store
+      if (activeChat.initialInputs?.[key] !== value) {
+        updateChatInitialInput(activeChatID, key, value);
+      }
+    });
+    setShowInitialInputSaveFeedback(true);
+    setTimeout(() => setShowInitialInputSaveFeedback(false), 2000);
+  };
+
   return (
     <div className="flex h-full bg-gradient-to-br from-slate-900 to-slate-800 text-slate-100 font-sans">
       {/* Main Chat Content */}
       <div className="flex flex-col flex-1 transition-all duration-300 ease-in-out">
         <Header />
         <MessageList messages={messages} />
+
+        {/* Display and Edit Initialized Inputs */}
+        {activeChat && activeChat.initialInputs && Object.keys(activeChat.initialInputs).length > 0 && (
+          <div className="bg-slate-800/30 p-3 border-b border-t border-slate-700">
+            <div className="flex justify-between items-center mb-2">
+              <h4 className="text-sm font-semibold text-sky-400">Initialized Inputs:</h4>
+              <button
+                onClick={handleSaveInitialInputs}
+                className="text-xs bg-green-600 hover:bg-green-700 text-white font-semibold py-1 px-2.5 rounded-md transition-colors disabled:opacity-50"
+                disabled={JSON.stringify(editableInitialInputs) === JSON.stringify(activeChat.initialInputs)}
+              >
+                Save Changes
+              </button>
+            </div>
+            {showInitialInputSaveFeedback && <p className="text-xs text-green-400 mb-2">Inputs saved!</p>}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+              {Object.entries(editableInitialInputs).map(([key, value]) => (
+                  <div key={key} className="bg-slate-700/50 p-2 rounded">
+                    <label htmlFor={`init-input-${key}`} className="text-slate-300 block truncate font-medium mb-1">{key}:</label>
+                    <textarea
+                      id={`init-input-${key}`}
+                      value={value || ''}
+                      onChange={(e) => handleInitialInputChange(key, e.target.value)}
+                      className="w-full h-20 bg-slate-600 border border-slate-500 rounded-md p-1.5 text-slate-100 placeholder-slate-400 resize-y focus:ring-1 focus:ring-sky-500 focus:border-transparent text-xs custom-scrollbar-thin"
+                      placeholder={`Value for ${key}...`}
+                    />
+                  </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         <ChatInput 
           inputValue={inputValue} 
           setInputValue={setInputValue} 
@@ -542,7 +605,7 @@ function ChatPage() {
       </div>
       
       {/* Settings Sidebar */}
-      <SettingsSidebar isOpen={isSidebarOpen} setIsOpen={setIsSidebarOpen} />
+      <SettingsSidebar isOpen={isSidebarOpen} setIsOpen={setIsSidebarOpen} onAddModelRequest={onAddModelRequest} />
     </div>
   );
 }

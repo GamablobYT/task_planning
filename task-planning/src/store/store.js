@@ -23,13 +23,15 @@ const useStore = create(
         maxTokens: 16384,
         topP: 1.0,
         minP: 0.0,
-        historySource: {} // Dictionary format
+        historySource: {}, // Dictionary format
+        examples: [], // Added for few-shot examples
+        initialInputs: {} // Added for pre-filled inputs for a model template
       }
     ],
 
     initializeNextModelId: () => {
       set(state => {
-        if (state.models.length > 0) {
+        if (state.models && state.models.length > 0) {
           const maxId = Math.max(...state.models.map(m => m.id), 0);
           state._nextModelId = maxId + 1;
         } else {
@@ -65,30 +67,17 @@ const useStore = create(
       });
     },
 
-    addModel: () => { // Existing function for SettingsSidebar
-      set((state) => {
-        // Ensure _nextModelId is up-to-date if not initialized globally
-        // For simplicity, assume initializeNextModelId is called at app start
-        const newId = state._nextModelId;
-        state._nextModelId++;
-        state.models.push({
-          id: newId,
-          name: "New Model", // Or `Model ${newId}`
-          value: "deepseek-ai/DeepSeek-R1-0528", // Consider using modelsList default
-          systemPrompt: "You are a helpful AI assistant.",
-          temperature: 0.7,
-          maxTokens: 16384,
-          topP: 1.0,
-          minP: 0.0,
-          historySource: {}
-        });
-      });
-    },
+    // Removed old addModel function as NewChatModal will handle additions.
 
     // New action for the NewChatModal
-    addNewModelFromConfig: (configData) => {
+    addNewModelFromConfig: (configData, replaceExisting = false) => {
       let newModelIdAssigned;
       set(state => {
+        if (replaceExisting) {
+          state.models = [];
+          state._nextModelId = 1; // Reset ID counter for the new set of models
+        }
+        
         newModelIdAssigned = state._nextModelId;
         state._nextModelId++;
         
@@ -96,11 +85,56 @@ const useStore = create(
           ...configData, // Contains name, value, systemPrompt, temp, etc.
           id: newModelIdAssigned,
           historySource: configData.historySource || {}, // Ensure historySource exists
+          examples: configData.examples || [], // Ensure examples exists
+          initialInputs: configData.initialInputs || {} // Ensure initialInputs exists
         };
         state.models.push(newModelEntry);
+
+        // If not replacing, ensure _nextModelId is correctly set if models were empty before
+        if (!replaceExisting && state.models.length === 1) {
+           // If this was the first model added to an empty list (not replacing)
+           // _nextModelId is already incremented, so it should be fine.
+           // Re-evaluate if needed, but current logic seems okay.
+        }
       });
       // Return the newly created model object
       return get().models.find(m => m.id === newModelIdAssigned);
+    },
+
+    loadModelsFromConfig: (modelsArray) => {
+      set(state => {
+        state.models = modelsArray && modelsArray.length > 0 
+          ? modelsArray.map(m => ({
+              ...m,
+              examples: m.examples || [], // Ensure examples field
+              initialInputs: m.initialInputs || {} // Ensure initialInputs field
+            }))
+          : [];
+        // Re-initialize _nextModelId based on the loaded models
+        if (state.models.length > 0) {
+          const maxId = Math.max(...state.models.map(m => m.id).filter(id => typeof id === 'number'), 0);
+          state._nextModelId = maxId + 1;
+        } else {
+          // If modelsArray is empty or invalid, models will be empty.
+          // Add a default model if state.models must never be empty,
+          // or handle this scenario in the UI.
+          // For now, allow empty models and set nextId to 1.
+          state.models.push({ // Add a default model if loaded config is empty
+            id: 0, // Or use _nextModelId logic if preferred for default
+            name: "Default Model",
+            value: "deepseek-ai/DeepSeek-R1-0528",
+            systemPrompt: "You are a helpful AI assistant.",
+            temperature: 0.7,
+            maxTokens: 16384,
+            topP: 1.0,
+            minP: 0.0,
+            historySource: { prompt: 1 }, // Default history source
+            examples: [], // Default examples
+            initialInputs: {} // Default initialInputs
+          });
+          state._nextModelId = Math.max(...state.models.map(m => m.id), 0) + 1;
+        }
+      });
     },
 
     removeModel: (modelId) => {
@@ -182,11 +216,29 @@ const useStore = create(
       try {
         const response = await apiService.get('/chats/get-chat-ids/');
         set((state) => {
-          state.chats = response.data.map(id => ({id: id.chat_id, title: id.chat_name || 'Untitled Chat'}));
+          state.chats = response.data.map(id => ({
+            id: id.chat_id, 
+            title: id.chat_name || 'Untitled Chat',
+            // Ensure new fields are potentially present or defaulted if needed when loading chats
+            initialInputs: id.initial_inputs || {}, // Assuming backend might provide this
+            examples: id.examples || [] // Assuming backend might provide this
+          }));
         });
       } catch (error) {
         console.error("Failed to fetch chat IDs:", error);
       }
+    },
+
+    updateChatInitialInput: (chatId, key, value) => {
+      set(state => {
+        const chatIndex = state.chats.findIndex(c => c.id === chatId);
+        if (chatIndex !== -1) {
+          if (!state.chats[chatIndex].initialInputs) {
+            state.chats[chatIndex].initialInputs = {};
+          }
+          state.chats[chatIndex].initialInputs[key] = value;
+        }
+      });
     },
 
     // Remove old model selection and active model logic
@@ -238,6 +290,8 @@ const useStore = create(
                 maxTokens: 16384,
                 topP: 1.0,
                 minP: 0.0,
+                examples: [], // Reset examples
+                initialInputs: {}, // Reset initial inputs
                 // Don't reset historySource to maintain validation
               }
             : model
@@ -247,17 +301,7 @@ const useStore = create(
   }))
 );
 
-const createModel = (id) => ({
-  id,
-  name: `Model ${id}`,
-  value: Object.values(modelsList)[0],
-  systemPrompt: "You are a helpful AI assistant.",
-  temperature: 0.7,
-  maxTokens: 16384,
-  topP: 1.0,
-  minP: 0.0,
-  historySource: {}
-});
+// Removed createModel utility function as it's unused.
 
 export default useStore;
 // This store manages the state of tasks in the application.s

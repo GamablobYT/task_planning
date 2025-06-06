@@ -10,6 +10,7 @@ import checkSession from './utils/checkSession';
 import ProtectedRoute from './utils/ProtectedRoute';
 import apiService from './utils/api';
 import NewChatModal from './components/NewChatModal'; // Import the new modal
+import SettingsSidebar from './components/SettingsSidebar'; // Assuming SettingsSidebar is imported if used in ChatPage
 
 import useStore from './store/store';
 
@@ -20,6 +21,7 @@ function AppContent() {
   const navigate = useReactRouterNavigate(); // Alias to avoid conflict if any
 
   const [isNewChatModalOpen, setIsNewChatModalOpen] = useState(false);
+  const [newChatModalMode, setNewChatModalMode] = useState(null); // 'initial' or 'add'
   
   const location = useLocation();
   const isChatPage = location.pathname.startsWith("/chat");
@@ -57,25 +59,39 @@ function AppContent() {
     init();
   }, [csrfToken, fetchCsrfToken, setAuthentication, setRole]);
 
-  const handleNewChatTrigger = () => {
+  const openNewChatModal = (mode) => {
+    setNewChatModalMode(mode);
     setIsNewChatModalOpen(true);
   };
 
-  const handleFinalizeChatCreation = async (newlyCreatedModel) => {
-    if (!newlyCreatedModel || !newlyCreatedModel.value) {
+  const handleNewChatTrigger = () => {
+    openNewChatModal('initial');
+  };
+
+  const handleFinalizeChatCreation = async (modelForAction, mode) => {
+    setIsNewChatModalOpen(false); // Close modal regardless of action
+    setNewChatModalMode(null);
+
+    if (mode === 'add') {
+      // If mode is 'add', the model is already added to the store by NewChatModal.
+      // No further action (like creating a chat) is needed here.
+      console.log("Model added to store via Settings. No new chat created.");
+      return;
+    }
+
+    // Proceed with chat creation only if mode is 'initial' (or similar that implies new chat)
+    if (!modelForAction || !modelForAction.value) {
       console.error("Invalid model configuration received for chat creation.");
-      setIsNewChatModalOpen(false);
       return;
     }
 
     try {
       const requestBody = {
-        model: newlyCreatedModel.value, // Use the value from the new model config
+        model: modelForAction.value, 
       };
 
-      // Add examples to the request if they exist
-      if (newlyCreatedModel.examples && newlyCreatedModel.examples.length > 0) {
-        requestBody.examples = newlyCreatedModel.examples;
+      if (modelForAction.examples && modelForAction.examples.length > 0) {
+        requestBody.examples = modelForAction.examples;
       }
 
       const response = await fetch("http://127.0.0.1:5000/new-chat", {
@@ -88,7 +104,6 @@ function AppContent() {
 
       if (!response.ok) {
         console.error("Failed to create a new chat on the backend");
-        setIsNewChatModalOpen(false);
         return;
       }
       const data = await response.json();
@@ -96,7 +111,9 @@ function AppContent() {
 
       const newChat = {
         id: data.chat_id,
-        title: newlyCreatedModel.name || "New Chat" 
+        title: modelForAction.name || "New Chat",
+        initialInputs: modelForAction.initialInputs || {}, // Store initialInputs
+        examples: modelForAction.examples || [] // Store examples
       };
       
       const updatedChats = [newChat, ...useStore.getState().chats];
@@ -106,9 +123,8 @@ function AppContent() {
       navigate(`/chat/${newChat.id}`);
     } catch (error) {
       console.error("Error finalizing chat creation:", error);
-    } finally {
-      setIsNewChatModalOpen(false);
     }
+    // Modal is already closed at the beginning of this function.
   };
 
 
@@ -127,7 +143,8 @@ function AppContent() {
             <Route path="/login" element={isAuthenticated ? <Navigate to='/chat' /> : <Login />} />
             <Route path="/signup" element={isAuthenticated ? <Navigate to='chat' /> : <SignUp />} />
             <Route element={<ProtectedRoute />} >
-              <Route path="/chat/:chatId?" element={<ChatPage />} />
+              {/* Pass onAddModelRequest to ChatPage, which then passes to SettingsSidebar */}
+              <Route path="/chat/:chatId?" element={<ChatPage onAddModelRequest={() => openNewChatModal('add')} />} />
               <Route path="/profile" element={<Profile />} />
             </Route>
           </Routes>
@@ -136,8 +153,12 @@ function AppContent() {
       {isNewChatModalOpen && (
         <NewChatModal
           isOpen={isNewChatModalOpen}
-          onClose={() => setIsNewChatModalOpen(false)}
+          onClose={() => {
+            setIsNewChatModalOpen(false);
+            setNewChatModalMode(null);
+          }}
           onFinalizeCreation={handleFinalizeChatCreation}
+          creationMode={newChatModalMode}
         />
       )}
     </>

@@ -16,6 +16,11 @@ const JsonRenderer = ({ data, level = 0, onDataChange, onKeyChange }) => {
   const [newFieldKey, setNewFieldKey] = useState('');
   const [newFieldValue, setNewFieldValue] = useState('');
 
+  // New state for adding to root
+  const [isAddingToRoot, setIsAddingToRoot] = useState(false);
+  const [newRootKeyName, setNewRootKeyName] = useState(''); // Only if root is an object
+  const [newRootValue, setNewRootValue] = useState('');
+
   const toggleExpanded = (key) => {
     const newExpanded = new Set(expandedKeys);
     if (newExpanded.has(key)) {
@@ -135,6 +140,40 @@ const JsonRenderer = ({ data, level = 0, onDataChange, onKeyChange }) => {
   const handleRemoveField = (key, path) => {
     if (onDataChange) {
       onDataChange(path, key, undefined, true);
+    }
+  };
+
+  const handleStartAddRootField = () => {
+    setIsAddingToRoot(true);
+    setNewRootKeyName('');
+    setNewRootValue('');
+  };
+
+  const handleCancelAddRootField = () => {
+    setIsAddingToRoot(false);
+    setNewRootKeyName('');
+    setNewRootValue('');
+  };
+
+  const handleSubmitAddRootField = async () => {
+    if (!onDataChange) return;
+
+    const processedValue = parseValue(newRootValue);
+    let success = false;
+
+    if (Array.isArray(data)) {
+      success = await onDataChange([], data.length, processedValue);
+    } else if (typeof data === 'object' && data !== null) {
+      if (!newRootKeyName.trim()) {
+        // Optionally, show an error to the user that key is required for objects
+        console.error("Key is required when adding to an object.");
+        return; 
+      }
+      success = await onDataChange([], newRootKeyName, processedValue);
+    }
+
+    if (success !== false) {
+      handleCancelAddRootField(); // Reset form
     }
   };
 
@@ -316,17 +355,72 @@ const JsonRenderer = ({ data, level = 0, onDataChange, onKeyChange }) => {
     return Object.entries(data).map(([key, value]) => renderValue(key, value, level, []));
   };
   
+  const renderAddRootFieldForm = () => {
+    if (!isAddingToRoot) {
+      return (
+        <button
+          onClick={handleStartAddRootField}
+          className="mt-4 w-full text-xs bg-slate-600 hover:bg-slate-500 text-slate-300 px-3 py-1.5 rounded-md transition-colors flex items-center justify-center gap-1"
+        >
+          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" /></svg>
+          {Array.isArray(data) ? "Add Item to Root" : "Add Field to Root"}
+        </button>
+      );
+    }
+
+    return (
+      <div className="mt-4 p-3 bg-slate-700/50 rounded-lg border border-slate-600 space-y-2">
+        <h4 className="text-xs font-semibold text-slate-300">
+          {Array.isArray(data) ? "New Root Item" : "New Root Field"}
+        </h4>
+        {!Array.isArray(data) && (
+          <input
+            type="text"
+            placeholder="Field Name"
+            value={newRootKeyName}
+            onChange={(e) => setNewRootKeyName(e.target.value)}
+            className="w-full bg-slate-600 border border-slate-500 rounded px-2 py-1 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
+            autoFocus
+          />
+        )}
+        <input
+          type="text"
+          placeholder="Field Value"
+          value={newRootValue}
+          onChange={(e) => setNewRootValue(e.target.value)}
+          className="w-full bg-slate-600 border border-slate-500 rounded px-2 py-1 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
+          onKeyDown={(e) => { if (e.key === 'Enter') handleSubmitAddRootField(); else if (e.key === 'Escape') handleCancelAddRootField();}}
+        />
+        <div className="flex gap-2">
+          <button
+            onClick={handleSubmitAddRootField}
+            className="text-xs bg-green-500/20 text-green-300 px-2 py-1 rounded hover:bg-green-500/30 transition-colors"
+          >
+            Save
+          </button>
+          <button
+            onClick={handleCancelAddRootField}
+            className="text-xs bg-slate-500/20 text-slate-300 px-2 py-1 rounded hover:bg-slate-500/30 transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="text-sm">
       {renderTopLevel()}
+      {renderAddRootFieldForm()}
     </div>
   );
 };
 
-const SettingsSidebar = ({ isOpen, setIsOpen }) => {
+const SettingsSidebar = ({ isOpen, setIsOpen, onAddModelRequest }) => {
   const {
     models,
-    addModel,
+    // addModel, // No longer used directly from store for this button
     removeModel,
     updateModelSetting
   } = useStore();
@@ -339,6 +433,11 @@ const SettingsSidebar = ({ isOpen, setIsOpen }) => {
   const [validationError, setValidationError] = useState(null);
   const [showValidationError, setShowValidationError] = useState(false);
   const [enabledModels, setEnabledModels] = useState([]);
+  const [showSaveSuccessToast, setShowSaveSuccessToast] = useState(false);
+
+  // State for examples modal
+  const [isExamplesModalOpen, setIsExamplesModalOpen] = useState(false);
+  const [examplesModalContent, setExamplesModalContent] = useState(null); // Will store the model object
 
   // Read enabled models from localStorage
   useEffect(() => {
@@ -707,6 +806,76 @@ const SettingsSidebar = ({ isOpen, setIsOpen }) => {
     handleHistorySourceChange(modelId, 'models', newModels.length > 0 ? newModels : null);
   };
 
+  const handleSaveConfig = () => {
+    const currentModels = useStore.getState().models;
+    if (currentModels && currentModels.length > 0) {
+      localStorage.setItem('savedModelConfig', JSON.stringify(currentModels));
+      setShowSaveSuccessToast(true);
+      setTimeout(() => setShowSaveSuccessToast(false), 3000); // Hide after 3 seconds
+    } else {
+      // Optionally, show an error or disable button if no models to save
+      console.warn("No models to save.");
+    }
+  };
+
+  const handleShowExamples = (model) => {
+    setExamplesModalContent(model);
+    setIsExamplesModalOpen(true);
+  };
+
+  const renderExamplesModal = () => {
+    if (!isExamplesModalOpen || !examplesModalContent || !examplesModalContent.examples || examplesModalContent.examples.length === 0) {
+      return null;
+    }
+    return (
+      <div className="fixed inset-0 bg-slate-900 bg-opacity-75 backdrop-blur-sm flex items-center justify-center z-[60] p-4"> {/* Increased z-index */}
+        <div className="bg-slate-800 p-6 rounded-lg shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-xl font-semibold text-sky-400">
+              Few-Shot Examples for "{examplesModalContent.name}" ({examplesModalContent.examples.length})
+            </h3>
+            <button
+              onClick={() => setIsExamplesModalOpen(false)}
+              className="text-slate-400 hover:text-slate-200 p-1 rounded-full"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+          </div>
+          <div className="flex-grow overflow-y-auto space-y-4 pr-2 custom-scrollbar-thin">
+            {examplesModalContent.examples.map((example, index) => (
+              <div key={index} className="p-4 bg-slate-700/50 rounded-lg border border-slate-600">
+                <p className="text-xs text-slate-400 font-mono mb-2">Example {index + 1}</p>
+                {example.inputs && Object.keys(example.inputs).length > 0 && (
+                  <div className="mb-2">
+                    <strong className="text-sm text-sky-300 block mb-1">Inputs:</strong>
+                    {Object.entries(example.inputs).map(([key, value]) => (
+                      <div key={`ex-in-${index}-${key}`} className="ml-2 mb-1">
+                        <p className="text-xs text-slate-400 font-medium">{key}:</p>
+                        <p className="text-sm text-slate-200 whitespace-pre-wrap bg-slate-600/30 p-1.5 rounded text-xs">{String(value)}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {example.outputs && Object.keys(example.outputs).length > 0 && (
+                  <div>
+                    <strong className="text-sm text-sky-300 block mb-1">Outputs:</strong>
+                    {Object.entries(example.outputs).map(([key, value]) => (
+                      <div key={`ex-out-${index}-${key}`} className="ml-2 mb-1">
+                        <p className="text-xs text-slate-400 font-medium">{key}:</p>
+                        <p className="text-sm text-slate-200 whitespace-pre-wrap bg-slate-600/30 p-1.5 rounded text-xs">{String(value)}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+
   return (
     <>
       <ErrorToast
@@ -716,6 +885,11 @@ const SettingsSidebar = ({ isOpen, setIsOpen }) => {
         message={validationError}
         duration={5000}
       />
+      {showSaveSuccessToast && (
+        <div className="fixed bottom-4 right-4 bg-green-500 text-white p-3 rounded-lg shadow-md z-50">
+          Configuration saved successfully!
+        </div>
+      )}
 
       {/* Hidden file input */}
       <input
@@ -990,6 +1164,33 @@ const SettingsSidebar = ({ isOpen, setIsOpen }) => {
                         )}
                       </div>
 
+                      {/* Few-shot Examples Info */}
+                      {model.examples && model.examples.length > 0 && (
+                        <div 
+                          className="text-xs text-slate-400 p-2 bg-slate-700/40 rounded-md border border-slate-600 hover:border-sky-500 cursor-pointer transition-colors"
+                          onClick={() => handleShowExamples(model)}
+                          title="Click to view examples"
+                        >
+                          <span className="font-semibold text-sky-400 hover:text-sky-300">{model.examples.length} few-shot example(s)</span> configured. (Click to view)
+                          <br />
+                          <span className="italic">Manage examples during new model creation or by editing the system prompt JSON.</span>
+                        </div>
+                      )}
+
+                      {/* Initial Inputs Info */}
+                      {model.initialInputs && Object.keys(model.initialInputs).length > 0 && (
+                         <div className="text-xs text-slate-400 p-2 bg-slate-700/40 rounded-md border border-slate-600">
+                          <span className="font-semibold text-slate-300">Initial input values</span> configured for this model template:
+                          <ul className="list-disc list-inside pl-2 mt-1">
+                            {Object.entries(model.initialInputs).map(([key, value]) => (
+                              value && <li key={key} className="truncate"><strong>{key}</strong>: {String(value).substring(0,30)}{String(value).length > 30 ? '...' : ''}</li>
+                            ))}
+                          </ul>
+                           <span className="italic">These are set up during new model creation.</span>
+                        </div>
+                      )}
+
+
                       {/* Temperature */}
                       <div className="space-y-2">
                         <label className="block text-sm font-medium text-slate-200">
@@ -1071,7 +1272,7 @@ const SettingsSidebar = ({ isOpen, setIsOpen }) => {
 
             {/* Add Model Button */}
             <button
-              onClick={addModel}
+              onClick={onAddModelRequest} // Changed from addModel store action
               className="w-full border-2 border-dashed border-slate-600 rounded-lg p-4
                        text-slate-400 hover:text-slate-300 hover:border-slate-500
                        focus:text-slate-300 focus:border-slate-500
@@ -1081,6 +1282,19 @@ const SettingsSidebar = ({ isOpen, setIsOpen }) => {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
               </svg>
               Add Model
+            </button>
+
+            {/* Save Config Button */}
+            <button
+              onClick={handleSaveConfig}
+              className="w-full mt-4 bg-sky-600 hover:bg-sky-700 text-white rounded-lg p-3
+                         text-sm font-medium transition-colors duration-200
+                         flex items-center justify-center gap-2"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path d="M7.707 10.293a1 1 0 10-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 11.586V6h5a2 2 0 012 2v7a2 2 0 01-2 2H4a2 2 0 01-2-2V8a2 2 0 012-2h5v5.586l-1.293-1.293zM9 4a1 1 0 012 0v2H9V4z" />
+              </svg>
+              Save Configuration
             </button>
           </div>
         </div>
@@ -1108,6 +1322,7 @@ const SettingsSidebar = ({ isOpen, setIsOpen }) => {
           }
         `}</style>
       </div>
+      {renderExamplesModal()}
     </>
   );
 };

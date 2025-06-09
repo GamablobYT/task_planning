@@ -231,13 +231,7 @@ const useStore = create(
 
     updateChatInitialInput: (chatId, key, value) => {
       set(state => {
-        const chatIndex = state.chats.findIndex(c => c.id === chatId);
-        if (chatIndex !== -1) {
-          if (!state.chats[chatIndex].initialInputs) {
-            state.chats[chatIndex].initialInputs = {};
-          }
-          state.chats[chatIndex].initialInputs[key] = value;
-        }
+        state.models[0].initialInputs[key] = value
       });
     },
 

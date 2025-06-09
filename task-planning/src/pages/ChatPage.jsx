@@ -24,12 +24,14 @@ function ChatPage({ onAddModelRequest }) {
   const [showInitialInputSaveFeedback, setShowInitialInputSaveFeedback] = useState(false);
 
   // Get the full active chat object to access initialInputs and examples
-  const activeChat = chats.find(chat => chat.id === activeChatID);
+  const activeChat = models[0];
 
   useEffect(() => {
     if (activeChat && activeChat.initialInputs) {
+      console.log('active chat:', activeChat);
       setEditableInitialInputs(JSON.parse(JSON.stringify(activeChat.initialInputs))); // Deep copy
     } else {
+      console.log('active chat inside else:', activeChat);
       setEditableInitialInputs({});
     }
   }, [activeChat, activeChatID]);

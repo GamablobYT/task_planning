@@ -8,511 +8,409 @@ import os
 from google import genai
 from google.genai import types
 import uuid
+from collections import deque
 
 load_dotenv()
 
 app = Flask(__name__)
 # Update CORS to allow both localhost:5174 and standard React development port
-CORS(app, origins=["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173", "http://127.0.0.1:3000", "http://localhost:5174", "http://127.0.1:5174"])
+CORS(app, origins=["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173", "http://127.0.0.1:3000", "http://localhost:5174", "http://127.0.0.1:5174"])
 
 supported_models = ["deepseek-ai/DeepSeek-R1", "deepseek-ai/DeepSeek-R1-0528", "deepseek-ai/DeepSeek-V3-0324", "gemini-2.5-flash-preview-05-20", "deepseek-ai/DeepSeek-R1-0528-Qwen3-8B"]
 
-# Store chat histories
-chat_histories = {}
-
 # Initialize Gemini client once
 gemini_api_token = os.environ.get("GEMINI_API_KEY", "")
-gemini_client = genai.Client(api_key=gemini_api_token)
-gemini_chat = None  # global chat
+if gemini_api_token:
+    gemini_client = genai.Client(api_key=gemini_api_token)
+else:
+    gemini_client = None
+    print("Warning: GEMINI_API_KEY not found. Gemini models will not be available.")
 
+
+# Stores the message history for the currently active chat tab in the frontend.
 active_chat_history = []
+
+# NEW: Stores the initialInputs used in the last turn for the active chat.
+# The key is the model's original index, the value is the initialInputs string.
+last_used_initial_inputs = {}
+
+# --- Helper Functions ---
+
+def determine_execution_order(models_list):
+    """
+    Performs a topological sort to determine the execution order of models based on dependencies.
+    """
+    n = len(models_list)
+    in_degree = [0] * n
+    adj = [[] for _ in range(n)]
+
+    for i, model in enumerate(models_list):
+        dependencies_1_based = model.get("historySource", {}).get("models", [])
+        for dep_index_1_based in dependencies_1_based:
+            dep_index_0_based = dep_index_1_based - 1
+            if not (0 <= dep_index_0_based < n):
+                raise ValueError(f"Model {i} has an invalid dependency index: {dep_index_0_based}")
+            # Dependency `dep_index` must run before model `i`
+            adj[dep_index_0_based].append(i)
+            in_degree[i] += 1
+
+    queue = deque([i for i in range(n) if in_degree[i] == 0])
+    execution_order = []
+
+    while queue:
+        u = queue.popleft()
+        execution_order.append(u)
+        for v in adj[u]:
+            in_degree[v] -= 1
+            if in_degree[v] == 0:
+                queue.append(v)
+
+    if len(execution_order) != n:
+        raise ValueError("A circular dependency was detected in the models configuration.")
+
+    return execution_order
+
+def build_system_prompt(main_prompt, examples):
+    """
+    Combines the main system prompt with formatted examples.
+    """
+    if not examples:
+        return main_prompt
+
+    formatted_examples = "\n---\nExamples:"
+    for ex in examples:
+        user_text = ex.get("user", "")
+        assistant_text = ex.get("assistant", "")
+        formatted_examples += f"\nUser: {user_text}\nAssistant: {assistant_text}"
+    
+    return f"{main_prompt}{formatted_examples}"
+
+def build_input_messages(history_source, user_message, chat_history, model_outputs, models_list):
+    """
+    Constructs the list of messages for a model based on its historySource configuration.
+    This version adds a dynamic instruction if the original prompt is omitted.
+    """
+    messages = []
+    # print(model_outputs)
+    
+    # 1. Add previous chat history if requested
+    if history_source.get("history"):
+        messages.extend(chat_history)
+        
+    # 2. Add outputs from dependency models as context
+    dependency_outputs_content = []
+    model_deps = history_source.get("models", [])
+    if model_deps:
+        for dep_index in sorted(model_deps):
+            dep_output = model_outputs.get(dep_index - 1)
+            # print(dep_index, dep_output)
+            if dep_output is not None:
+                dep_model_name = models_list[dep_index - 1].get("value", f"Model {dep_index - 1}")
+                # Frame the context as a simple user message.
+                context_block = f"{dep_output}"
+                messages.append({"role": "user", "content": ''})
+                messages.append({"role": "assistant", "content": f"{context_block}"})
+
+    # 3. Add the main user prompt OR a generated instruction
+    if history_source.get("prompt"):
+        # The model needs the original user prompt, add it as the final message.
+        messages.append({"role": "user", "content": user_message})
+    elif model_deps:
+        # The model has dependencies but NOT the original prompt.
+        # This means it should act on the context it just received.
+        # We create a new, final instruction for it.
+        instruction = "Based on the context provided in the previous message(s), generate a comprehensive response or perform the requested action according to the system instructions."
+        messages.append({"role": "user", "content": instruction})
+        
+    # If a model has no history, no models, and no prompt, it will receive an empty message list.
+    # This is an edge case that the invoke functions should handle (as they do now).
+    return messages
+
+
+# --- API Routes ---
 
 @app.route("/switch-chat", methods=["POST"])
 def switch_chat():
-    data = request.get_json()
-    chat_id = data.get("chat_id")
-    
-    #remove all chat histories except the active one
+    """Clears the active history when switching chats in the frontend."""
     active_chat_history.clear()
-    
-    return jsonify({"message": "Switched to chat history", "chat_id": chat_id})
+    last_used_initial_inputs.clear()
+    return jsonify({"message": "Switched to new chat, history cleared."})
 
 @app.route("/send-chat-history", methods=["POST"])
 def send_chat_history():
+    """Receives and sets the active chat history from the frontend."""
     data = request.get_json()
-    history = data.get("messages")
-    # print(f"Received chat history: {history}")
-
-    # receive the active chat history
+    history = data.get("messages", [])
+    active_chat_history.clear()
     active_chat_history.extend(history)
-    print(len(active_chat_history), "messages in active chat history")
-
+    print(f"{len(active_chat_history)} messages loaded into active chat history.")
     return jsonify({"message": "Chat history received"})
 
 @app.route("/get-chat-name", methods=["POST"])
 def get_chat_name():
+    """Generates a short chat title from the first message using Gemini."""
+    if not gemini_client:
+        return jsonify({"chat_name": "New Chat"})
+
     data = request.get_json()
-    print(data)
     prompt = data.get("message")
     model = "gemini-2.5-flash-preview-05-20"
-    response = gemini_client.models.generate_content(
-        model=model,
-        config= types.GenerateContentConfig(
-            system_instruction="Your job is to create a small 4-5 word Chat Title based on the message"
-        ),
-        contents=prompt
-    )
-    
-    return jsonify({"chat_name": response.text})
+    try:
+        response = gemini_client.models.generate_content(
+            model=model,
+            config=types.GenerateContentConfig(
+                system_instruction="Your job is to create a short 4-5 word Chat Title based on the user's message."
+            ),
+            contents=prompt
+        )
+        return jsonify({"chat_name": response.text.strip()})
+    except Exception as e:
+        print(f"Error generating chat name: {e}")
+        return jsonify({"chat_name": "New Chat"})
+
 
 @app.route("/new-chat", methods=["POST"])
 def create_new_chat():
-    data = request.get_json()
-    model = data.get("model")
-    
-    if model not in supported_models:
-        return jsonify({"error": "Model not supported"}), 400
-    
+    """Handles the creation of a new chat, primarily for the frontend to get a new ID."""
     chat_id = str(uuid.uuid4())
-    # chat_histories[chat_id] = []
-    
-    # For Gemini, create and store the chat object
-    # if model.split("-")[0] == "gemini":
-        # gemini_chats[chat_id] = gemini_client.chats.create(model=model)
-    
+    # Server-side history is now managed as a single active session, cleared on switch.
     return jsonify({"chat_id": chat_id})
 
 @app.route("/chat", methods=["POST"])
-def route_to_model():
+def chat_orchestrator():
+    """
+    Main chat endpoint that orchestrates multi-model responses based on dependencies.
+    """
     data = request.get_json()
     user_message = data.get("message")
-    modelsList = data.get("model")
-    chat_id = data.get("chat_id")
+    modelsList = data.get("model", [])
     
-    if not modelsList or len(modelsList) == 0:
-        return jsonify({"error": "At least one model is required"}), 400
-    
-    # Get the first model configuration
-    first_model = modelsList[0]
-    model = first_model.get("value", "")
-    config = {
-        "system_prompt": first_model.get("systemPrompt", ""),
-        "temperature": first_model.get("temperature", 0.7),
-        "max_tokens": first_model.get("maxTokens", 16384),
-        "top_p": first_model.get("topP", 1.0),
-        "min_p": first_model.get("minP", 0.0),
-    }
-
-    print("DEBUGGING LENGTH OF ACTIVE CHAT HISTORY:", len(active_chat_history))
-    # print(f"Received message: {user_message} for {len(modelsList)} models, chat_id: {chat_id}")
-    
-    for model in modelsList:
-        if model.get("value", "") not in supported_models:
-            return jsonify({"error": f"Model {model.get('value', '')} not supported"}), 400
     if not user_message:
         return jsonify({"error": "Message is required"}), 400
-    
-    # Add user message to history once
-    if len(active_chat_history) == 0 or active_chat_history[-1].get("content") != config.get("system_prompt", ""):
-        active_chat_history.append({"role": "system", "content": config.get("system_prompt", "")})
-    active_chat_history.append({"role": "user", "content": user_message})
-    
+    if not modelsList:
+        return jsonify({"error": "At least one model configuration is required"}), 400
+
+    for model_config in modelsList:
+        if model_config.get("value") not in supported_models:
+            return jsonify({"error": f"Model {model_config.get('value')} is not supported"}), 400
+
+    try:
+        execution_order = determine_execution_order(modelsList)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+    # Preserve the history from before this turn to pass to models
+    previous_history = active_chat_history.copy()
+
     def generate_multi_model():
-        # Process first model normally
-        if model.get("value").split("-")[0] == "deepseek":
-            response_generator = invoke_chute(user_message, model.get("value"), chat_id, config)
-        elif model.get("value").split("-")[0] == "gemini":
-            response_generator = invoke_gemini(user_message, model.get("value"), chat_id, config)
-        else:
-            yield json.dumps({"error": f"Unsupported model: {model}"} + "\n")
+        global last_used_initial_inputs
+        model_outputs = {}  # Store full text responses of each model, keyed by original index
+
+        for i, model_index in enumerate(execution_order):
+            model_config = modelsList[model_index]
+            model_name = model_config.get("value")
+            
+            config = {
+                "temperature": model_config.get("temperature", 0.7),
+                "max_tokens": model_config.get("maxTokens", 8192),
+                "top_p": model_config.get("topP", 1.0),
+                "min_p": model_config.get("minP", 0.0), # Note: min_p is DeepSeek specific
+            }
+
+            # Add a delimiter for the UI to separate model responses
+            if i > 0:
+                yield json.dumps({"content": f"\n\n--- Response from {model_name} ---\n\n"}) + "\n"
+
+            effective_user_message = user_message
+            current_initial_inputs = model_config.get("initialInputs", "")
+
+            #condition 1: first message in chat
+            is_first_message = len(previous_history) == 0
+            
+            #condition 2: have initialInputs changed?
+            previous_inputs = last_used_initial_inputs.get(model_index, "")
+            have_inputs_changed = previous_inputs != current_initial_inputs
+
+            if current_initial_inputs and (is_first_message or have_inputs_changed):
+                #prepend initial inputs to the user's message
+                print("prepending initla inputs")
+                effective_user_message = f"{current_initial_inputs}\n\n--\n\n{user_message}"
+
+            # 1. Construct the full system prompt with examples
+            system_prompt = build_system_prompt(
+                model_config.get("systemPrompt", ""),
+                model_config.get("examples", [])
+            )
+            
+            # 2. Construct the input messages for this specific model
+            input_messages = build_input_messages(
+                model_config.get("historySource", {}),
+                effective_user_message,
+                previous_history,
+                model_outputs,
+                modelsList
+            )
+
+            # print(previous_history)
+            
+            # 3. Invoke the correct model and stream the response
+            response_generator = None
+            if model_name.startswith("deepseek-ai"):
+                # For DeepSeek, the system prompt is part of the messages list
+                if system_prompt:
+                    input_messages.insert(0, {"role": "system", "content": system_prompt})
+                response_generator = invoke_chute(input_messages, model_name, config)
+            elif model_name.startswith("gemini"):
+                # For Gemini, the system prompt is a separate parameter
+                response_generator = invoke_gemini(input_messages, model_name, config, system_prompt)
+            
+            if not response_generator:
+                yield json.dumps({"error": f"Could not create generator for model {model_name}"}) + "\n"
+                continue
+
+            # 4. Stream chunks to the client and accumulate the full response
+            full_response = ""
+            for chunk_str in response_generator:
+                yield chunk_str  # Forward the JSON string chunk
+                try:
+                    chunk_json = json.loads(chunk_str)
+                    content = chunk_json.get("content", "")
+                    if content:
+                        full_response += content
+                except (json.JSONDecodeError, TypeError):
+                    pass # Ignore non-content chunks or errors
+            
+            model_outputs[model_index] = full_response
+
+        # After all models have run, update the persistent active history
+        # The user's message is added once.
+        active_chat_history.append({"role": "user", "content": user_message})
+        # The assistant's response is from the all the models that were executed*.
+        if execution_order and model_outputs:
+            for i in range(len(execution_order)):
+                output = model_outputs.get(execution_order[i], "")
+                if "</think>" in output:
+                    think_index = output.rfind("</think>")
+                    filtered_response = output[think_index + 8:]  # Remove <think> tags
+                active_chat_history.append({"role": "assistant", "content": filtered_response.strip()})
+
+        new_inputs_for_next_turn = {}
+        for idx, model_cfg in enumerate(modelsList):
+            new_inputs_for_next_turn[idx] = model_cfg.get("initialInputs", "")
+
+        last_used_initial_inputs = new_inputs_for_next_turn
+
+    return Response(stream_with_context(generate_multi_model()), mimetype='application/json')
+
+# --- Model Invocation Functions ---
+
+def invoke_chute(messages, model, config):
+    """Invokes the DeepSeek model via Chutes.ai and yields response chunks."""
+    api_token = os.environ.get("CHUTES_API_TOKEN", "")
+    if not api_token:
+        yield json.dumps({"error": "CHUTES_API_TOKEN is not set."}) + "\n"
+        return
+
+    headers = {"Authorization": f"Bearer {api_token}", "Content-Type": "application/json"}
+    body = {
+        "model": model,
+        "messages": messages,
+        "stream": True,
+        "max_tokens": config.get("max_tokens"),
+        "temperature": config.get("temperature"),
+        "top_p": config.get("top_p"),
+        "min_p": config.get("min_p"),
+    }
+
+    async def stream_async():
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post("https://llm.chutes.ai/v1/chat/completions", headers=headers, json=body) as response:
+                    if response.status != 200:
+                        error = await response.text()
+                        yield json.dumps({"error": f"API error from Chutes.ai: {error}"}) + "\n"
+                        return
+                    
+                    async for line in response.content:
+                        line = line.decode("utf-8").strip()
+                        if line.startswith("data: "):
+                            data = line[6:]
+                            if data == "[DONE]":
+                                break
+                            try:
+                                chunk = json.loads(data)
+                                content = chunk.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                                if content:
+                                    yield json.dumps({"content": content}) + "\n"
+                            except Exception as e:
+                                yield json.dumps({"error": f"Error parsing chunk: {e}"}) + "\n"
+        except Exception as e:
+            yield json.dumps({"error": f"Connection error: {e}"}) + "\n"
+
+    # This sync wrapper allows using the async generator in a sync Flask route
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    async_gen = stream_async()
+    try:
+        while True:
+            yield loop.run_until_complete(async_gen.__anext__())
+    except StopAsyncIteration:
+        pass
+    finally:
+        loop.close()
+
+def invoke_gemini(messages, model, config, system_prompt):
+    """Invokes the Gemini model and yields response chunks."""
+    if not gemini_client:
+        yield json.dumps({"error": "Gemini client not initialized. Check GEMINI_API_KEY."}) + "\n"
+        return
+
+    try:
+        # Gemini uses a history list and a final message to send.
+        # The last message in our list is the one to send.
+        if not messages:
+            yield json.dumps({"error": "Gemini received no messages to process."}) + "\n"
             return
+            
+
+        # print(messages)
+        final_message_to_send = messages[-1]["content"]
+        history_messages = messages[:-1]
+        # print(history_messages)
+
+        # Convert our standard message format to Google's format
+        history_for_gemini = []
+        for msg in history_messages:
+            role = msg["role"]
+            if role == "system": continue # Handled by system_instruction
+            if role == "assistant": role = "model"
+            
+            part = types.Part(text=msg["content"])
+            history_for_gemini.append(types.Content(role=role, parts=[part]))
+
+        # print("gemini history:", history_for_gemini)
+
+        chat = gemini_client.chats.create(
+            model=model,
+            history=history_for_gemini,
+            config=types.GenerateContentConfig(
+                system_instruction=system_prompt if system_prompt else None,
+                temperature=config.get("temperature"),
+                max_output_tokens=config.get("max_tokens"),
+                top_p=config.get("top_p"),
+            )
+        )
         
-        # Stream the first model's response
-        for chunk in response_generator.response:
-            yield chunk
-        
-        if len(modelsList) > 1:
-            # Process remaining models sequentially
-            for i in range(1, len(modelsList)):
-                current_model_config = modelsList[i]
-                current_model = current_model_config.get("value", "")
-                current_config = {
-                    "system_prompt": current_model_config.get("systemPrompt", ""),
-                    "temperature": current_model_config.get("temperature", 0.7),
-                    "max_tokens": current_model_config.get("maxTokens", 16384),
-                    "top_p": current_model_config.get("topP", 1.0),
-                    "min_p": current_model_config.get("minP", 0.0),
-                }
+        # print(history_for_gemini, final_message_to_send)
 
-                # if current_model not in supported_models:
-                    # yield json.dumps({"error": f"Model {current_model} not supported"}) + "\n"
-                    # continue
-
-                # Add delimiter between model responses
-                yield json.dumps({"content": f"\n\n--- Response from {current_model} ---\n\n"}) + "\n"
-
-                # Route to appropriate _next function
-                if current_model.split("-")[0] == "deepseek":
-                    next_response = invoke_chute_next(user_message, current_model, chat_id, current_config)
-                elif current_model.split("-")[0] == "gemini":
-                    next_response = invoke_gemini_next(user_message, current_model, chat_id, current_config)
-                else:
-                    yield json.dumps({"error": f"Unsupported model: {current_model}"}) + "\n"
-                    continue
+        response_stream = chat.send_message_stream(message=final_message_to_send)
+        for chunk in response_stream:
+            if chunk.text:
+                yield json.dumps({"content": chunk.text}) + "\n"
                 
-                # Stream the current model's response
-                for chunk in next_response.response:
-                    # print(chunk)
-                    yield chunk
-    
-    return Response(stream_with_context(generate_multi_model()), content_type='application/json')
+    except Exception as e:
+        yield json.dumps({"error": f"Gemini API error: {str(e)}"}) + "\n"
 
-def invoke_chute(message, model, chat_id, config):
-    # print(f"Invoking chute with message: {message}, model: {model}, chat_id: {chat_id}, config: {config}")
-    # Get API token from environment variable
-    api_token = os.environ.get("CHUTES_API_TOKEN", "")
-    
-    headers = {
-        "Authorization": f"Bearer {api_token}",
-        "Content-Type": "application/json"
-    }
-    
-    # Use the full chat history instead of just the last message
-    body = {
-        "model": model,
-        "messages": active_chat_history,
-        "stream": True,
-        "max_tokens": config.get("max_tokens", 16384),
-        "temperature": config.get("temperature", 0.7),
-        "top_p": config.get("top_p", 1.0),
-        "min_p": config.get("min_p", 0.0),
-    }
-
-    def generate():
-        full_response = ""
-        
-        async def stream_async():
-            nonlocal full_response
-            try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.post(
-                        "https://llm.chutes.ai/v1/chat/completions", 
-                        headers=headers,
-                        json=body
-                    ) as response:
-                        if response.status != 200:
-                            error = await response.text()
-                            yield json.dumps({"error": f"API error: {error}"}) + "\n"
-                            return
-                            
-                        # Process the stream directly instead of collecting chunks
-                        async for line in response.content:
-                            line = line.decode("utf-8").strip()
-                            if line.startswith("data: "):
-                                data = line[6:]
-                                if data == "[DONE]":
-                                    break
-                                try:
-                                    chunk = json.loads(data)
-                                    if chunk and "choices" in chunk and len(chunk["choices"]) > 0:
-                                        content = chunk["choices"][0].get("delta", {}).get("content", "")
-                                        if content:
-                                            full_response += content
-                                            # Yield each chunk immediately
-                                            yield json.dumps({"content": content}) + "\n"
-                                            # Force flush to ensure immediate delivery
-                                            await asyncio.sleep(0)
-                                except Exception as e:
-                                    yield json.dumps({"error": f"Error parsing chunk: {str(e)}"}) + "\n"
-            except Exception as e:
-                yield json.dumps({"error": f"Connection error: {str(e)}"}) + "\n"
-        
-        # Create a new event loop
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
-        try:
-            # Get an async generator from our coroutine
-            async_gen = stream_async()
-            
-            # Iterate through the generator and yield each chunk
-            while True:
-                try:
-                    # Run until next yield point and get the value
-                    chunk = loop.run_until_complete(async_gen.__anext__())
-                    yield chunk
-                except StopAsyncIteration:
-                    # Generator is exhausted
-                    break
-                    
-            # After streaming completes, add the full response to chat history
-            if full_response:
-                filtered_response = full_response
-                if "</think>" in full_response:
-                    think_index = full_response.rfind("</think>")
-                    filtered_response = full_response[think_index + 8:]
-
-                if filtered_response:
-                    # print(filtered_response)
-                    active_chat_history.append({"role": "assistant", "content": filtered_response})
-        finally:
-            loop.close()
-    
-    return Response(stream_with_context(generate()), content_type='application/json')
-
-def invoke_chute_next(message, model, chat_id, config):
-    # Get API token from environment variable
-    api_token = os.environ.get("CHUTES_API_TOKEN", "")
-    
-    headers = {
-        "Authorization": f"Bearer {api_token}",
-        "Content-Type": "application/json"
-    }
-    
-    history = []
-    history.append({"role": "system", "content": config.get("system_prompt", "")})
-    history.append({"role": "user", "content": message})
-    history.append(active_chat_history[-1]) 
-
-    # Use the full chat history instead of just the last message
-    body = {
-        "model": model,
-        "messages": history,
-        "stream": True,
-        "max_tokens": config.get("max_tokens", 16384),
-        "temperature": config.get("temperature", 0.7),
-        "top_p": config.get("top_p", 1.0),
-        "min_p": config.get("min_p", 0.0),
-    }
-
-    def generate():
-        full_response = ""
-        
-        async def stream_async():
-            nonlocal full_response
-            try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.post(
-                        "https://llm.chutes.ai/v1/chat/completions", 
-                        headers=headers,
-                        json=body
-                    ) as response:
-                        if response.status != 200:
-                            error = await response.text()
-                            yield json.dumps({"error": f"API error: {error}"}) + "\n"
-                            return
-                            
-                        # Process the stream directly instead of collecting chunks
-                        async for line in response.content:
-                            line = line.decode("utf-8").strip()
-                            if line.startswith("data: "):
-                                data = line[6:]
-                                if data == "[DONE]":
-                                    break
-                                try:
-                                    chunk = json.loads(data)
-                                    # print(chunk)
-                                    if chunk and "choices" in chunk and len(chunk["choices"]) > 0:
-                                        content = chunk["choices"][0].get("delta", {}).get("content", "")
-                                        if content:
-                                            full_response += content
-                                            # Yield each chunk immediately
-                                            # print(content)
-                                            yield json.dumps({"content": content}) + "\n"
-                                            # Force flush to ensure immediate delivery
-                                            await asyncio.sleep(0)
-                                except Exception as e:
-                                    yield json.dumps({"error": f"Error parsing chunk: {str(e)}"}) + "\n"
-            except Exception as e:
-                yield json.dumps({"error": f"Connection error: {str(e)}"}) + "\n"
-        
-        # Create a new event loop
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
-        try:
-            # Get an async generator from our coroutine
-            async_gen = stream_async()
-            
-            # Iterate through the generator and yield each chunk
-            while True:
-                try:
-                    # Run until next yield point and get the value
-                    chunk = loop.run_until_complete(async_gen.__anext__())
-                    yield chunk
-                except StopAsyncIteration:
-                    # Generator is exhausted
-                    break
-                    
-            # After streaming completes, add the full response to chat history
-            if full_response:
-                filtered_response = full_response
-                if "</think>" in full_response:
-                    think_index = full_response.rfind("</think>")
-                    filtered_response = full_response[think_index + 8:]
-
-                if filtered_response:
-                    active_chat_history.append({"role": "assistant", "content": full_response})
-        finally:
-            loop.close()
-    
-    return Response(stream_with_context(generate()), content_type='application/json')
-
-def invoke_gemini(message, model, chat_id, config):
-    def generate():
-        full_response = ""
-        try:
-            # Convert chat history to Google's content format
-            history = []
-            for msg in active_chat_history:
-                # print(msg)
-                role = msg["role"]
-                content = msg["content"]
-                
-                if role == "assistant":
-                    role = "model"
-
-                # Skip the current user message since we'll send it separately
-                if role == "user" and content == message and msg == active_chat_history[-1]:
-                    continue
-
-                if role == "system":
-                    # System messages are not sent in the chat history
-                    continue
-                    
-                # Convert to Google's format
-                part = types.Part(text=content)
-                content_entry = types.Content(role=role, parts=[part])
-
-                history.append(content_entry)
-            
-            if history:
-                chat = gemini_client.chats.create(
-                    model = model,
-                    history = history,
-                    config= types.GenerateContentConfig(
-                        system_instruction=config.get("system_propmt", ""),
-                        temperature=config.get("temperature", 0.7),
-                        max_output_tokens=config.get("max_tokens", 16384),
-                        top_p=config.get("top_p", 1.0),
-                    )
-                )
-            else:
-                chat = gemini_client.chats.create(
-                    model=model,
-                    config = types.GenerateContentConfig(
-                        system_instruction=config.get("system_prompt", ""),
-                        temperature=config.get("temperature", 0.7),
-                        max_output_tokens=config.get("max_tokens", 16384),
-                        top_p=config.get("top_p", 1.0),
-                    )
-                )
-            global gemini_chat
-            gemini_chat = chat
-            
-            # Send message and stream response
-            # print(history, message)
-            print(len(history), "messages in history")
-            response = chat.send_message_stream(message=message)
-            for chunk in response:
-                if chunk.text:
-                    full_response += chunk.text
-                    yield json.dumps({"content": chunk.text}) + "\n"
-            
-            # After streaming completes, add the response to chat history
-            if full_response:
-                active_chat_history.append({"role": "assistant", "content": full_response})
-                
-        except Exception as e:
-            yield json.dumps({"error": f"Gemini API error: {str(e)}"}) + "\n"
-    
-    return Response(stream_with_context(generate()), content_type='application/json')
-
-def invoke_gemini_next(message, model, chat_id, config):
-    def generate():
-        full_response = ""
-        try:
-            # Convert chat history to Google's content format
-            needed_active_chat_history = []
-            needed_active_chat_history.append({"role": "user", "content": message})
-            needed_active_chat_history.append(active_chat_history[-1])
-            history = []
-            for msg in needed_active_chat_history:
-                # print(msg)
-                role = msg["role"]
-                content = msg["content"]
-                
-                if role == "assistant":
-                    role = "model"
-
-                # Skip the current user message since we'll send it separately
-                if role == "user" and content == message and msg == active_chat_history[-1]:
-                    continue
-
-                if role == "system":
-                    # System messages are not sent in the chat history
-                    continue
-                    
-                # Convert to Google's format
-                part = types.Part(text=content)
-                content_entry = types.Content(role=role, parts=[part])
-
-                history.append(content_entry)
-            
-            if history:
-                chat = gemini_client.chats.create(
-                    model = model,
-                    history = history,
-                    config= types.GenerateContentConfig(
-                        system_instruction=config.get("system_prompt", ""),
-                        temperature=config.get("temperature", 0.7),
-                        max_output_tokens=config.get("max_tokens", 16384),
-                        top_p=config.get("top_p", 1.0),
-                    )
-                )
-            else:
-                chat = gemini_client.chats.create(
-                    model=model,
-                    config = types.GenerateContentConfig(
-                        system_instruction=config.get("system_prompt", ""),
-                        temperature=config.get("temperature", 0.7),
-                        max_output_tokens=config.get("max_tokens", 16384),
-                        top_p=config.get("top_p", 1.0),
-                    )
-                )
-            global gemini_chat
-            gemini_chat = chat
-            
-            # Send message and stream response
-            # print(history, message)
-            print(len(history), "messages in history")
-            response = chat.send_message_stream(message="Generate the response based on the instructions and the history.")
-            for chunk in response:
-                if chunk.text:
-                    full_response += chunk.text
-                    yield json.dumps({"content": chunk.text}) + "\n"
-            
-            # After streaming completes, add the response to chat history
-            if full_response:
-                active_chat_history.append({"role": "assistant", "content": full_response})
-                
-        except Exception as e:
-            yield json.dumps({"error": f"Gemini API error: {str(e)}"}) + "\n"
-    
-    return Response(stream_with_context(generate()), content_type='application/json')
-
-@app.route("/fetch-messages/<chat_id>", methods=["GET"])
-def get_chat_history(chat_id):
-    chatID = chat_id
-    
-    if not chatID or chatID not in chat_histories:
-        # print(chatID, "not in ", chat_histories)
-        return jsonify({"error": "Invalid chat ID"}), 400
-    
-    history = chat_histories[chatID].copy()
-
-    # Return the chat history for the specified chat ID
-    return jsonify({"messages": history})
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(host="0.0.0.0", port=5000, debug=True)

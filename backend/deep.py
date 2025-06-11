@@ -199,105 +199,103 @@ def chat_orchestrator():
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
 
-    # Preserve the history from before this turn to pass to models
     previous_history = active_chat_history.copy()
 
     def generate_multi_model():
         global last_used_initial_inputs
-        model_outputs = {}  # Store full text responses of each model, keyed by original index
+        model_outputs = {}  # Store raw text responses of each model, keyed by original index
+        
+        # Send the display name of the first model that will execute
+        if execution_order:
+            first_model_config = modelsList[execution_order[0]]
+            first_model_display_name = first_model_config.get("name", f"Model {execution_order[0]+1}")
+            yield json.dumps({"first_model_display_name": first_model_display_name}) + "\n"
 
         for i, model_index in enumerate(execution_order):
             model_config = modelsList[model_index]
-            model_name = model_config.get("value")
+            model_display_name = model_config.get("name", f"Model {model_index+1}") # User-defined name
             
             config = {
                 "temperature": model_config.get("temperature", 0.7),
                 "max_tokens": model_config.get("maxTokens", 8192),
                 "top_p": model_config.get("topP", 1.0),
-                "min_p": model_config.get("minP", 0.0), # Note: min_p is DeepSeek specific
+                "min_p": model_config.get("minP", 0.0),
             }
 
-            # Add a delimiter for the UI to separate model responses
+            # Add a separator for models AFTER the first one
             if i > 0:
-                yield json.dumps({"content": f"\n\n--- Response from {model_name} ---\n\n"}) + "\n"
+                yield json.dumps({"model_separator": {"display_name": model_display_name}}) + "\n"
 
             effective_user_message = user_message
             current_initial_inputs = model_config.get("initialInputs", "")
 
-            #condition 1: first message in chat
             is_first_message = len(previous_history) == 0
-            
-            #condition 2: have initialInputs changed?
             previous_inputs = last_used_initial_inputs.get(model_index, "")
             have_inputs_changed = previous_inputs != current_initial_inputs
 
             if current_initial_inputs and (is_first_message or have_inputs_changed):
-                #prepend initial inputs to the user's message
-                print("prepending initla inputs")
+                print("prepending initial inputs")
                 effective_user_message = f"{current_initial_inputs}\n\n--\n\n{user_message}"
 
-            # 1. Construct the full system prompt with examples
             system_prompt = build_system_prompt(
                 model_config.get("systemPrompt", ""),
                 model_config.get("examples", [])
             )
             
-            # 2. Construct the input messages for this specific model
             input_messages = build_input_messages(
                 model_config.get("historySource", {}),
                 effective_user_message,
                 previous_history,
-                model_outputs,
+                model_outputs, # Pass raw outputs
                 modelsList
             )
-
-            # print(previous_history)
             
-            # 3. Invoke the correct model and stream the response
             response_generator = None
-            if model_name.startswith("deepseek-ai"):
-                # For DeepSeek, the system prompt is part of the messages list
+            model_api_name = model_config.get("value")
+            if model_api_name.startswith("deepseek-ai"):
                 if system_prompt:
                     input_messages.insert(0, {"role": "system", "content": system_prompt})
-                response_generator = invoke_chute(input_messages, model_name, config)
-            elif model_name.startswith("gemini"):
-                # For Gemini, the system prompt is a separate parameter
-                response_generator = invoke_gemini(input_messages, model_name, config, system_prompt)
+                response_generator = invoke_chute(input_messages, model_api_name, config)
+            elif model_api_name.startswith("gemini"):
+                response_generator = invoke_gemini(input_messages, model_api_name, config, system_prompt)
             
             if not response_generator:
-                yield json.dumps({"error": f"Could not create generator for model {model_name}"}) + "\n"
+                yield json.dumps({"error": f"Could not create generator for model {model_api_name}"}) + "\n"
                 continue
 
-            # 4. Stream chunks to the client and accumulate the full response
-            full_response = ""
+            full_response_for_this_model = ""
             for chunk_str in response_generator:
-                yield chunk_str  # Forward the JSON string chunk
+                yield chunk_str  # Forward the JSON string chunk {"content": "..."}
                 try:
                     chunk_json = json.loads(chunk_str)
                     content = chunk_json.get("content", "")
                     if content:
-                        full_response += content
+                        full_response_for_this_model += content
                 except (json.JSONDecodeError, TypeError):
-                    pass # Ignore non-content chunks or errors
+                    pass 
             
-            model_outputs[model_index] = full_response
+            model_outputs[model_index] = full_response_for_this_model # Store raw response
 
-        # After all models have run, update the persistent active history
-        # The user's message is added once.
         active_chat_history.append({"role": "user", "content": user_message})
-        # The assistant's response is from the all the models that were executed*.
+        
         if execution_order and model_outputs:
-            for i in range(len(execution_order)):
-                output = model_outputs.get(execution_order[i], "")
-                if "</think>" in output:
-                    think_index = output.rfind("</think>")
-                    filtered_response = output[think_index + 8:]  # Remove <think> tags
-                active_chat_history.append({"role": "assistant", "content": filtered_response.strip()})
+            for original_model_idx in execution_order: # Iterate in execution order
+                raw_response_content = model_outputs.get(original_model_idx, "")
+                
+                executed_model_config = modelsList[original_model_idx]
+                model_display_name_for_history = executed_model_config.get("name", f"Model {original_model_idx+1}")
+
+                filtered_response_content = raw_response_content
+                if "</think>" in raw_response_content:
+                    think_index = raw_response_content.rfind("</think>")
+                    filtered_response_content = raw_response_content[think_index + 8:]
+                
+                prefixed_content_for_history = f"**{model_display_name_for_history}:**\n{filtered_response_content.strip()}"
+                active_chat_history.append({"role": "assistant", "content": prefixed_content_for_history})
 
         new_inputs_for_next_turn = {}
         for idx, model_cfg in enumerate(modelsList):
             new_inputs_for_next_turn[idx] = model_cfg.get("initialInputs", "")
-
         last_used_initial_inputs = new_inputs_for_next_turn
 
     return Response(stream_with_context(generate_multi_model()), mimetype='application/json')

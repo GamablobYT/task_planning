@@ -36,15 +36,14 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation, creationMode }) => 
   const [jsonValidationError, setJsonValidationError] = useState(null);
   const [isFewShotPossible, setIsFewShotPossible] = useState(false); // New state to drive logic
   
-  // Step 4 State (I/O Selection)
-  const [templateIO, setTemplateIO] = useState({ inputs: [], outputs: [] });
-  const [selectedIO, setSelectedIO] = useState({ inputs: new Set(), outputs: new Set() });
+  // Step 4 State (I/O Path Selection)
+  const [selectedPaths, setSelectedPaths] = useState({ inputs: new Set(), outputs: new Set() });
 
-  // Step 5 State (Add Examples) - Was Step 6
+  // Step 5 State (Add Examples)
   const [fewShotExamples, setFewShotExamples] = useState([]);
   const [currentExample, setCurrentExample] = useState(null);
 
-  // Step 6 State (Initialize Inputs) - Was Step 5
+  // Step 6 State (Initialize Inputs)
   const [initialInputValues, setInitialInputValues] = useState({});
 
 
@@ -56,47 +55,15 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation, creationMode }) => 
           const savedConfig = JSON.parse(savedConfigRaw);
           if (savedConfig && savedConfig.length > 0) {
             setConfigPromptStep('prompt_load');
-            // Don't reset form fields yet, wait for user choice
-            return; // Exit early to show prompt
+            return;
           }
         } catch (e) {
           console.error("Error parsing saved config from localStorage", e);
-          localStorage.removeItem('savedModelConfig'); // Clear invalid config
+          localStorage.removeItem('savedModelConfig');
         }
       }
-      // Default to creating if no valid saved config or not in 'initial' mode
       setConfigPromptStep('creating');
-      // Reset all form states when starting 'creating' step or if not prompting
       setCurrentStep(1);
-      // setTotalSteps(3); // Initial total steps, will be adjusted by effects
-      setConfigName('My Custom Model');
-      setSelectedModelValue(modelsList[Object.keys(modelsList)[0]]);
-      setTemperature(0.7);
-      setMaxTokens(16384);
-      setTopP(1.0);
-      setMinP(0.0);
-      setSystemPromptContent('');
-      setIsJsonPrompt(false);
-      setParsedJsonToEdit(null);
-      setJsonValidationError(null);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-      setHistorySource({});
-      setIsHistoryEnabled(false);
-      setHistoryCount(1);
-      setIsPromptEnabled(false);
-      setIsModelsEnabled(false);
-      setSelectedHistoryModels([]);
-      setIsFewShotPossible(false); // Reset this, will be determined at step 3
-      setTemplateIO({ inputs: [], outputs: [] });
-      setSelectedIO({ inputs: new Set(), outputs: new Set() });
-      setInitialInputValues({}); // Reset new state
-      setFewShotExamples([]);
-      setCurrentExample(null);
-    } else {
-      // Full reset on close
-      setConfigPromptStep(null);
-      setCurrentStep(1);
-      // setTotalSteps(3); // Initial total steps
       setConfigName('My Custom Model');
       setSelectedModelValue(modelsList[Object.keys(modelsList)[0]]);
       setTemperature(0.7);
@@ -115,9 +82,33 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation, creationMode }) => 
       setIsModelsEnabled(false);
       setSelectedHistoryModels([]);
       setIsFewShotPossible(false);
-      setTemplateIO({ inputs: [], outputs: [] });
-      setSelectedIO({ inputs: new Set(), outputs: new Set() });
-      setInitialInputValues({}); // Reset new state
+      setSelectedPaths({ inputs: new Set(), outputs: new Set() });
+      setInitialInputValues({});
+      setFewShotExamples([]);
+      setCurrentExample(null);
+    } else {
+      setConfigPromptStep(null);
+      setCurrentStep(1);
+      setConfigName('My Custom Model');
+      setSelectedModelValue(modelsList[Object.keys(modelsList)[0]]);
+      setTemperature(0.7);
+      setMaxTokens(16384);
+      setTopP(1.0);
+      setMinP(0.0);
+      setSystemPromptContent('');
+      setIsJsonPrompt(false);
+      setParsedJsonToEdit(null);
+      setJsonValidationError(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      setHistorySource({});
+      setIsHistoryEnabled(false);
+      setHistoryCount(1);
+      setIsPromptEnabled(false);
+      setIsModelsEnabled(false);
+      setSelectedHistoryModels([]);
+      setIsFewShotPossible(false);
+      setSelectedPaths({ inputs: new Set(), outputs: new Set() });
+      setInitialInputValues({});
       setFewShotExamples([]);
       setCurrentExample(null);
     }
@@ -125,9 +116,9 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation, creationMode }) => 
 
   // EFFECT: Determine if few-shot is possible based on prompt content
   useEffect(() => {
-    if (currentStep === 3) { // Only re-evaluate when system prompt content is being finalized at step 3
+    if (currentStep === 3) {
       let potentialJson = parsedJsonToEdit;
-      if (!potentialJson && systemPromptContent) { // Check systemPromptContent if parsedJsonToEdit is not set
+      if (!potentialJson && systemPromptContent) {
         try {
           potentialJson = JSON.parse(systemPromptContent);
         } catch {
@@ -135,15 +126,10 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation, creationMode }) => 
         }
       }
 
-      const hasValidIOStructure = potentialJson &&
-            potentialJson.inputs && typeof potentialJson.inputs === 'object' && !Array.isArray(potentialJson.inputs) &&
-            potentialJson.outputs && typeof potentialJson.outputs === 'object' && !Array.isArray(potentialJson.outputs) &&
-            (Object.keys(potentialJson.inputs).length > 0 || Object.keys(potentialJson.outputs).length > 0);
+      const isJsonAnObject = potentialJson && typeof potentialJson === 'object' && !Array.isArray(potentialJson);
+      setIsFewShotPossible(isJsonAnObject);
 
-      setIsFewShotPossible(hasValidIOStructure);
     } else if (currentStep < 3) {
-        // If navigating back before step 3, reset few-shot possibility
-        // This ensures that if a user goes back and changes the prompt type, the state is fresh
         setIsFewShotPossible(false);
     }
   }, [currentStep, parsedJsonToEdit, systemPromptContent]);
@@ -195,33 +181,25 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation, creationMode }) => 
       }
       setCurrentStep(3);
     } else if (currentStep === 3) { // From Editor to I/O Selection (Step 4)
-        let finalJson = parsedJsonToEdit;
-        if (!finalJson) try { finalJson = JSON.parse(systemPromptContent); } catch { finalJson = null; }
-
-        if (finalJson) { // This implies isFewShotPossible is true
-            const inputKeys = Object.keys(finalJson.inputs || {});
-            const outputKeys = Object.keys(finalJson.outputs || {});
-            setTemplateIO({ inputs: inputKeys, outputs: outputKeys });
-            setSelectedIO({ inputs: new Set(inputKeys), outputs: new Set(outputKeys) }); // Default select all
+        if (isFewShotPossible) {
+            setSelectedPaths({ inputs: new Set(), outputs: new Set() }); // Reset selections for the new step
+            setCurrentStep(4);
         }
-        setCurrentStep(4);
     } else if (currentStep === 4) { // From I/O Selection to Add Examples (Step 5)
         const exampleShape = { inputs: {}, outputs: {} };
-        selectedIO.inputs.forEach(key => exampleShape.inputs[key] = '');
-        selectedIO.outputs.forEach(key => exampleShape.outputs[key] = '');
+        Array.from(selectedPaths.inputs).forEach(path => exampleShape.inputs[path] = '');
+        Array.from(selectedPaths.outputs).forEach(path => exampleShape.outputs[path] = '');
         setCurrentExample(exampleShape);
         setCurrentStep(5);
     } else if (currentStep === 5) { // From Add Examples (Step 5)
-        // This path is only for creationMode === 'initial'
         if (creationMode === 'initial') {
             const initialVals = {};
-            selectedIO.inputs.forEach(key => {
-                initialVals[key] = '';
+            Array.from(selectedPaths.inputs).forEach(path => {
+                initialVals[path] = '';
             });
             setInitialInputValues(initialVals);
             setCurrentStep(6); // Move to Initialize Inputs step (Step 6)
         }
-        // If creationMode === 'add', the button will call handleCreateChat directly
     }
   };
 
@@ -244,7 +222,7 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation, creationMode }) => 
     setParsedJsonToEdit(null);
     setIsJsonPrompt(false);
     setJsonValidationError(null);
-    setCurrentStep(3); // This will trigger isFewShotPossible check
+    setCurrentStep(3);
   };
 
   const handleJsonDataChange = async (path, key, value, isDelete = false) => {
@@ -254,11 +232,18 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation, creationMode }) => 
     for (let i = 0; i < path.length; i++) {
       current = current[path[i]];
     }
-    if (isDelete) delete current[key]; else current[key] = value;
+    if (isDelete) {
+      if (Array.isArray(current)) {
+          current.splice(key, 1);
+      } else {
+          delete current[key];
+      }
+    } else {
+      current[key] = value;
+    }
     setParsedJsonToEdit(newData);
     setSystemPromptContent(JSON.stringify(newData, null, 2));
     setJsonValidationError(null);
-    // isFewShotPossible will be re-evaluated by its useEffect due to parsedJsonToEdit change
     return true;
   };
 
@@ -276,7 +261,6 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation, creationMode }) => 
             console.error("Loaded config resulted in no models.");
             setConfigPromptStep('creating'); 
             setCurrentStep(1);
-            // ... (full reset of form fields handled by main useEffect)
             return;
           }
         } else {
@@ -292,10 +276,7 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation, creationMode }) => 
 
   const handleStartFresh = () => {
     setConfigPromptStep('creating');
-    // Reset form fields. Most are handled by the main useEffect when isOpen changes,
-    // but explicitly setting currentStep and isFewShotPossible here ensures correct state.
     setCurrentStep(1);
-    // totalSteps will be reset by its own effect based on isFewShotPossible & creationMode
     setConfigName('My Custom Model');
     setSelectedModelValue(modelsList[Object.keys(modelsList)[0]]);
     setTemperature(0.7);
@@ -306,16 +287,15 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation, creationMode }) => 
     setIsJsonPrompt(false);
     setParsedJsonToEdit(null);
     setJsonValidationError(null);
-    if (fileInputRef.current) fileInputRef.current.value = ''; // Corrected typo here
+    if (fileInputRef.current) fileInputRef.current.value = '';
     setHistorySource({});
     setIsHistoryEnabled(false);
     setHistoryCount(1);
     setIsPromptEnabled(false);
     setIsModelsEnabled(false);
     setSelectedHistoryModels([]);
-    setIsFewShotPossible(false); // Explicitly reset
-    setTemplateIO({ inputs: [], outputs: [] });
-    setSelectedIO({ inputs: new Set(), outputs: new Set() });
+    setIsFewShotPossible(false);
+    setSelectedPaths({ inputs: new Set(), outputs: new Set() });
     setInitialInputValues({});
     setFewShotExamples([]);
     setCurrentExample(null);
@@ -342,9 +322,6 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation, creationMode }) => 
       if (fewShotExamples.length > 0) {
         newModelConfigurationData.examples = fewShotExamples;
       }
-      // initialInputValues will be populated if Step 6 was run (creationMode='initial'),
-      // or an empty object {} if Step 6 was skipped (creationMode='add').
-      // This correctly stores it as a top-level item.
       newModelConfigurationData.initialInputs = initialInputValues;
     }
 
@@ -354,7 +331,7 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation, creationMode }) => 
     if (newlyCreatedModel) {
       onFinalizeCreation(newlyCreatedModel, creationMode);
     } else {
-      onClose(); // Should ideally not happen if addNewModel always returns something or throws
+      onClose();
     }
   };
 
@@ -364,39 +341,52 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation, creationMode }) => 
     );
   };
 
-  const handleIOSelection = (type, key, checked) => {
-    setSelectedIO(prev => {
-        const newSet = new Set(prev[type]);
-        if (checked) newSet.add(key); else newSet.delete(key);
-        return { ...prev, [type]: newSet };
-    });
+  const handlePathSelectionChange = (pathString, type, isSelected) => {
+      setSelectedPaths(prev => {
+          const currentSet = new Set(prev[type]);
+          const otherType = type === 'inputs' ? 'outputs' : 'inputs';
+          const otherSet = new Set(prev[otherType]);
+
+          if (isSelected) {
+              currentSet.add(pathString);
+              if (otherSet.has(pathString)) {
+                  otherSet.delete(pathString);
+              }
+          } else {
+              currentSet.delete(pathString);
+          }
+          
+          const result = {};
+          result[type] = currentSet;
+          result[otherType] = otherSet;
+          return result;
+      });
   };
 
   const renderStep4_IOSelection = () => (
     <div className="space-y-4">
-        <h3 className="text-lg font-medium text-slate-200">Select Input/Output Fields for Examples</h3>
-        <p className="text-slate-400">Choose which fields from your template you want to use for providing examples and initial values.</p>
-        <div className="space-y-2">
-            <label className="block text-sm font-medium text-sky-400">Inputs</label>
-            <div className="bg-slate-700/50 p-3 rounded-lg space-y-2 border border-slate-600">
-                {templateIO.inputs.length > 0 ? templateIO.inputs.map(key => (
-                    <label key={`in-${key}`} className="flex items-center gap-2 cursor-pointer text-slate-300">
-                        <input type="checkbox" checked={selectedIO.inputs.has(key)} onChange={e => handleIOSelection('inputs', key, e.target.checked)} className="w-4 h-4 text-sky-500 bg-slate-600 border-slate-500 rounded focus:ring-sky-500 focus:ring-2" />
-                        <span>{key}</span>
-                    </label>
-                )) : <p className="text-slate-500 text-sm italic">No input fields found in template.</p>}
-            </div>
+        <h3 className="text-lg font-medium text-slate-200">Select Input/Output Fields</h3>
+        <p className="text-slate-400">
+            Select fields from your JSON to serve as inputs and outputs for few-shot examples.
+            A field cannot be both an input and an output.
+        </p>
+        <div className="flex items-center gap-4 text-sm text-slate-300">
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 rounded-sm border-2 border-sky-500 bg-sky-500/20"></div>
+            <span>Input</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 rounded-sm border-2 border-orange-500 bg-orange-500/20"></div>
+            <span>Output</span>
+          </div>
         </div>
-        <div className="space-y-2">
-            <label className="block text-sm font-medium text-sky-400">Outputs</label>
-            <div className="bg-slate-700/50 p-3 rounded-lg space-y-2 border border-slate-600">
-                {templateIO.outputs.length > 0 ? templateIO.outputs.map(key => (
-                    <label key={`out-${key}`} className="flex items-center gap-2 cursor-pointer text-slate-300">
-                        <input type="checkbox" checked={selectedIO.outputs.has(key)} onChange={e => handleIOSelection('outputs', key, e.target.checked)} className="w-4 h-4 text-sky-500 bg-slate-600 border-slate-500 rounded focus:ring-sky-500 focus:ring-2" />
-                        <span>{key}</span>
-                    </label>
-                )) : <p className="text-slate-500 text-sm italic">No output fields found in template.</p>}
-            </div>
+        <div className="bg-slate-900/50 border border-slate-700 rounded-lg p-3 max-h-[50vh] overflow-y-auto custom-scrollbar-thin">
+            <JsonRenderer 
+                data={parsedJsonToEdit}
+                isSelectionMode={true}
+                selectedPaths={selectedPaths}
+                onSelectionChange={handlePathSelectionChange}
+            />
         </div>
     </div>
   );
@@ -409,9 +399,9 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation, creationMode }) => 
     <div className="space-y-6">
       <h3 className="text-lg font-medium text-slate-200">Initialize Input Fields (Optional)</h3>
       <p className="text-slate-400">Provide initial values for the selected input fields. These can be used to start your chat or provide context.</p>
-      {Array.from(selectedIO.inputs).length > 0 ? (
+      {Array.from(selectedPaths.inputs).length > 0 ? (
         <div className="p-4 bg-slate-700/50 rounded-lg border border-slate-600 space-y-4">
-          {Array.from(selectedIO.inputs).map(key => (
+          {Array.from(selectedPaths.inputs).map(key => (
             <div key={`init-in-${key}`}>
               <label htmlFor={`init-in-${key}`} className="block text-sm text-slate-300 mb-1 font-medium">{key}</label>
               <textarea 
@@ -442,8 +432,8 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation, creationMode }) => 
     }
     setFewShotExamples(prev => [...prev, currentExample]);
     const exampleShape = { inputs: {}, outputs: {} };
-    selectedIO.inputs.forEach(key => exampleShape.inputs[key] = '');
-    selectedIO.outputs.forEach(key => exampleShape.outputs[key] = '');
+    Array.from(selectedPaths.inputs).forEach(path => exampleShape.inputs[path] = '');
+    Array.from(selectedPaths.outputs).forEach(path => exampleShape.outputs[path] = '');
     setCurrentExample(exampleShape);
   };
   const handleRemoveExample = (index) => {
@@ -456,18 +446,18 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation, creationMode }) => 
         {currentExample && (
             <div className="p-4 bg-slate-700/50 rounded-lg border border-slate-600 space-y-4">
                 <h4 className="font-semibold text-slate-300">New Example</h4>
-                {Array.from(selectedIO.inputs).length > 0 && <div className="space-y-2">
+                {Array.from(selectedPaths.inputs).length > 0 && <div className="space-y-2">
                     <label className="text-sm font-medium text-sky-400">Inputs</label>
-                    {Array.from(selectedIO.inputs).map(key => (
+                    {Array.from(selectedPaths.inputs).map(key => (
                         <div key={`ex-in-${key}`}>
                             <label htmlFor={`ex-in-${key}`} className="block text-xs text-slate-400 mb-1">{key}</label>
                             <textarea id={`ex-in-${key}`} value={currentExample.inputs[key] || ''} onChange={e => handleExampleFieldChange('inputs', key, e.target.value)} className="w-full h-20 bg-slate-700 border border-slate-600 rounded-md p-2 text-slate-100 placeholder-slate-400 resize-y focus:ring-2 focus:ring-sky-500 focus:border-transparent"/>
                         </div>
                     ))}
                 </div>}
-                {Array.from(selectedIO.outputs).length > 0 && <div className="space-y-2">
+                {Array.from(selectedPaths.outputs).length > 0 && <div className="space-y-2">
                     <label className="text-sm font-medium text-sky-400">Outputs</label>
-                    {Array.from(selectedIO.outputs).map(key => (
+                    {Array.from(selectedPaths.outputs).map(key => (
                         <div key={`ex-out-${key}`}>
                             <label htmlFor={`ex-out-${key}`} className="block text-xs text-slate-400 mb-1">{key}</label>
                             <textarea id={`ex-out-${key}`} value={currentExample.outputs[key] || ''} onChange={e => handleExampleFieldChange('outputs', key, e.target.value)} className="w-full h-20 bg-slate-700 border border-slate-600 rounded-md p-2 text-slate-100 placeholder-slate-400 resize-y focus:ring-2 focus:ring-sky-500 focus:border-transparent"/>
@@ -538,7 +528,6 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation, creationMode }) => 
         <div className="flex-grow overflow-y-auto pr-2 custom-scrollbar">
           {currentStep === 1 && (
             <div className="space-y-4">
-              {/* ... Step 1 content remains the same ... */}
               <div>
                 <label htmlFor="configName" className="block text-sm font-medium text-slate-300">Configuration Name</label>
                 <input type="text" id="configName" value={configName} onChange={(e) => setConfigName(e.target.value)}
@@ -648,8 +637,7 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation, creationMode }) => 
           )}
           {currentStep === 2 && (
             <div className="space-y-4">
-              {/* ... Step 2 content remains the same ... */}
-              <p className="text-slate-300">Upload a system prompt template (.txt or .json). If the JSON contains "inputs" and "outputs" objects, you can create few-shot examples in later steps.</p>
+              <p className="text-slate-300">Upload a system prompt template (.txt or .json). If the JSON is a valid object, you can create few-shot examples in later steps.</p>
               <div>
                 <label htmlFor="promptFile" className="block text-sm font-medium text-slate-300">Upload File</label>
                 <input type="file" id="promptFile" ref={fileInputRef} onChange={handleFileUpload} accept=".txt,.json"
@@ -660,8 +648,7 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation, creationMode }) => 
           )}
           {currentStep === 3 && (
             <div className="space-y-4">
-              {/* ... Step 3 content remains the same ... */}
-              <p className="text-slate-300">Edit the system prompt. If it contains valid "inputs" and "outputs" JSON objects, you can proceed to add examples.</p>
+              <p className="text-slate-300">Edit the system prompt. If it's a valid JSON object, you can proceed to select fields for examples.</p>
               {jsonValidationError && <p className="text-yellow-400 text-sm mb-2">{jsonValidationError}</p>}
               {isJsonPrompt && parsedJsonToEdit ? (
                 <div className="bg-slate-700 border border-slate-600 rounded-lg p-3 max-h-80 overflow-y-auto custom-scrollbar-thin">

@@ -5,7 +5,16 @@ import ErrorToast from './ErrorToast';
 import modelsList from '../consts/models';
 
 // JSON Renderer Component
-const JsonRenderer = ({ data, level = 0, onDataChange, onKeyChange }) => {
+const JsonRenderer = ({ 
+  data, 
+  level = 0, 
+  onDataChange, 
+  onKeyChange,
+  // New props for selection mode
+  isSelectionMode = false,
+  selectedPaths = { inputs: new Set(), outputs: new Set() },
+  onSelectionChange 
+}) => {
   const [expandedKeys, setExpandedKeys] = useState(new Set());
   const [editingField, setEditingField] = useState(null); // For values: 'path.to.key'
   const [editValue, setEditValue] = useState('');
@@ -32,6 +41,7 @@ const JsonRenderer = ({ data, level = 0, onDataChange, onKeyChange }) => {
   };
 
   const handleSingleClick = (key, value, path) => {
+    if (!onDataChange) return;
     const fieldId = `${path.length > 0 ? path.join('.') + '.' : ''}${key}`;
     if (typeof value !== 'object' || value === null) {
       setEditingField(fieldId);
@@ -78,7 +88,7 @@ const JsonRenderer = ({ data, level = 0, onDataChange, onKeyChange }) => {
   };
 
   const handleKeyDoubleClick = (key, path) => {
-    if (typeof key === 'number') return;
+    if (typeof key === 'number' || !onKeyChange) return;
     const keyId = `${path.length > 0 ? path.join('.') + '.' : ''}${key}`;
     setEditingKey(keyId);
     setNewKeyName(key);
@@ -103,6 +113,7 @@ const JsonRenderer = ({ data, level = 0, onDataChange, onKeyChange }) => {
   };
   
   const handleStartAddField = (path) => {
+    if (!onDataChange) return;
     setAddingField(path.join('.'));
     setNewFieldKey('');
     setNewFieldValue('');
@@ -144,6 +155,7 @@ const JsonRenderer = ({ data, level = 0, onDataChange, onKeyChange }) => {
   };
 
   const handleStartAddRootField = () => {
+    if (!onDataChange) return;
     setIsAddingToRoot(true);
     setNewRootKeyName('');
     setNewRootValue('');
@@ -165,7 +177,6 @@ const JsonRenderer = ({ data, level = 0, onDataChange, onKeyChange }) => {
       success = await onDataChange([], data.length, processedValue);
     } else if (typeof data === 'object' && data !== null) {
       if (!newRootKeyName.trim()) {
-        // Optionally, show an error to the user that key is required for objects
         console.error("Key is required when adding to an object.");
         return; 
       }
@@ -181,12 +192,13 @@ const JsonRenderer = ({ data, level = 0, onDataChange, onKeyChange }) => {
     const currentPath = [...path, key];
     const fieldId = `${currentLevel}-${key}`;
     const fullPathId = `${path.length > 0 ? path.join('.') + '.' : ''}${key}`;
+    const fullPathString = currentPath.join('.');
     const isEditing = editingField === fullPathId;
     const isEditingKey = editingKey === fullPathId;
     const isHovered = hoveredField === fieldId;
     const isAddingToThis = addingField === fullPathId;
 
-    const keyComponent = isEditingKey ? (
+    const keyDisplay = isEditingKey ? (
         <input
             type="text"
             value={newKeyName}
@@ -206,6 +218,30 @@ const JsonRenderer = ({ data, level = 0, onDataChange, onKeyChange }) => {
         >
             {key}
         </span>
+    );
+
+    const keyComponent = (
+        <>
+            {keyDisplay}
+            {isSelectionMode && (
+                <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
+                    <input 
+                        type="checkbox"
+                        title={`Mark as Input: ${fullPathString}`}
+                        checked={selectedPaths.inputs.has(fullPathString)}
+                        onChange={(e) => onSelectionChange(fullPathString, 'inputs', e.target.checked)}
+                        className="w-4 h-4 rounded-sm bg-slate-600 border border-slate-500 text-sky-500 checked:border-sky-500 checked:bg-sky-500/20 focus:ring-sky-500 focus:ring-2 cursor-pointer"
+                    />
+                    <input 
+                        type="checkbox"
+                        title={`Mark as Output: ${fullPathString}`}
+                        checked={selectedPaths.outputs.has(fullPathString)}
+                        onChange={(e) => onSelectionChange(fullPathString, 'outputs', e.target.checked)}
+                        className="w-4 h-4 rounded-sm bg-slate-600 border border-slate-500 text-orange-500 checked:border-orange-500 checked:bg-orange-500/20 focus:ring-orange-500 focus:ring-2 cursor-pointer"
+                    />
+                </div>
+            )}
+        </>
     );
 
     if (typeof value === 'object' && value !== null) {
@@ -237,7 +273,7 @@ const JsonRenderer = ({ data, level = 0, onDataChange, onKeyChange }) => {
                 {keyComponent}
                 <span className="text-slate-300 ml-2">: [ {!isExpanded && `${value.length} items`}</span>
               </div>
-              {isHovered && (
+              {isHovered && onDataChange && (
                 <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button onClick={(e) => { e.stopPropagation(); handleStartAddField(currentPath); }} className="w-4 h-4 text-green-400 hover:text-green-300 flex items-center justify-center" title="Add item"><svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" /></svg></button>
                     <button onClick={(e) => { e.stopPropagation(); handleRemoveField(key, path); }} className="w-4 h-4 text-red-400 hover:text-red-300 flex items-center justify-center" title="Remove field"><svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M3 10a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clipRule="evenodd" /></svg></button>
@@ -287,7 +323,7 @@ const JsonRenderer = ({ data, level = 0, onDataChange, onKeyChange }) => {
                 {shouldBeExpandable && (<svg className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-90' : ''}`} fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" /></svg>)}
                 {keyComponent}
               </div>
-              {isHovered && (
+              {isHovered && onDataChange && (
                 <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                   <button onClick={(e) => { e.stopPropagation(); handleStartAddField(currentPath); }} className="w-4 h-4 text-green-400 hover:text-green-300 flex items-center justify-center" title="Add field"><svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" /></svg></button>
                   <button onClick={(e) => { e.stopPropagation(); handleRemoveField(key, path); }} className="w-4 h-4 text-red-400 hover:text-red-300 flex items-center justify-center" title="Remove field"><svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M3 10a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clipRule="evenodd" /></svg></button>
@@ -337,7 +373,7 @@ const JsonRenderer = ({ data, level = 0, onDataChange, onKeyChange }) => {
                   )}
               </div>
             </div>
-            {isHovered && !isEditing && (
+            {isHovered && !isEditing && onDataChange && (
               <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                 <button onClick={() => handleRemoveField(key, path)} className="w-4 h-4 text-red-400 hover:text-red-300 flex items-center justify-center" title="Remove field"><svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M3 10a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clipRule="evenodd" /></svg></button>
               </div>
@@ -358,7 +394,7 @@ const JsonRenderer = ({ data, level = 0, onDataChange, onKeyChange }) => {
   const renderAddRootFieldForm = () => {
     if (!isAddingToRoot) {
       return (
-        <button
+        onDataChange && <button
           onClick={handleStartAddRootField}
           className="mt-4 w-full text-xs bg-slate-600 hover:bg-slate-500 text-slate-300 px-3 py-1.5 rounded-md transition-colors flex items-center justify-center gap-1"
         >

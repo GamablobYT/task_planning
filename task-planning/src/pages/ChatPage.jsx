@@ -242,21 +242,12 @@ function ChatPage({ onAddModelRequest }) {
 
   const sendMessageToServer = async (message, id) => {
     // Get the number of models
-    const numberOfModels = models.length;
+    // const numberOfModels = models.length; // Not directly used in the new logic this way
     
     try {
-      // Variable to hold the active chat ID for this request
-      // Ensure activeChatID is used directly from store or state
-      const currentActiveChatID = activeChatID; // Use the one from store/state
-      let isNewChat = false; // This logic path will change
-
-      // If no chat ID exists, the user should create one via sidebar.
-      // Input should be disabled if !currentActiveChatID
+      const currentActiveChatID = activeChatID;
       if (!currentActiveChatID) {
-        // This case should ideally not happen if UI prevents sending messages without an active chat.
-        // For robustness, you could add an error message or disable input.
         console.error("No active chat. Please select or create a chat first.");
-        // Optionally, show a user-facing error message
         addMessage({
           id: crypto.randomUUID(),
           content: "Error: No active chat selected. Please create or select a chat from the sidebar.",
@@ -268,15 +259,12 @@ function ChatPage({ onAddModelRequest }) {
       }
       
       console.log("Using existing Chat ID:", currentActiveChatID);
-      // Ensure we're on the correct URL
       const currentPath = window.location.pathname;
       const urlChatID = currentPath.split('/')[2] || null;
       if (urlChatID !== currentActiveChatID) {
         navigate(`/chat/${currentActiveChatID}`);
       }
 
-
-      // Now add the user message
       const newUserMessage = {
         id: id,
         content: message,
@@ -286,37 +274,27 @@ function ChatPage({ onAddModelRequest }) {
       addMessage(newUserMessage);
 
       try {
-        const sendingMessageResponse = await apiService.post('chats/save-chat/', {
-          chat_id: currentActiveChatID, // Use currentActiveChatID
+        await apiService.post('chats/save-chat/', {
+          chat_id: currentActiveChatID,
           message: {
             role: 'user',
             content: message
           },
-          message_id: id
+          message_id: id,
+          initialized_inputs: editableInitialInputs // Include editable initial inputs
         });
       } catch (error) {
         console.error("Error saving user message:", error);
         throw new Error("Failed to save user message: " + error.message);
       }
 
-      // Small delay to ensure user message is rendered
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise(resolve => setTimeout(resolve, 100)); // Small delay
 
-      // Create only the first bot message initially
-      const botMessageIds = [];
-      const firstBotResponseId = crypto.randomUUID();
-      botMessageIds.push(firstBotResponseId);
-      
-      const firstModelName = models[0]?.name || 'Model 1';
-      addMessage({
-        id: firstBotResponseId,
-        content: `**${firstModelName}:**\n`,
-        role: 'bot',
-        isTyping: true,
-        time: Date.now()
-      });
+      // Initialize arrays to store bot message IDs and their accumulated texts
+      let botMessageIds = [];
+      let accumulatedTexts = []; // Stores full prefixed text for each model
+      let currentModelProcessingIndex = -1; // Index for current model being processed
 
-      // Use fetch for streaming - with the currentActiveChatID
       const response = await fetch('http://127.0.0.1:5000/chat', {
         method: 'POST',
         headers: {
@@ -324,8 +302,8 @@ function ChatPage({ onAddModelRequest }) {
         },
         body: JSON.stringify({
           message: message,
-          model: models, // This sends all configured models
-          chat_id: currentActiveChatID // Use currentActiveChatID
+          model: models, 
+          chat_id: currentActiveChatID
         })
       });
       
@@ -333,53 +311,25 @@ function ChatPage({ onAddModelRequest }) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
       
-      // Get a reader from the response body stream
       const reader = response.body.getReader();
       const decoder = new TextDecoder('utf-8');
-      let currentModelIndex = 0;
-      let accumulatedTexts = new Array(numberOfModels).fill('');
       
-      // Initialize the first bot message content with model name
-      const firstModelNameText = models[0]?.name || 'Model 1';
-      accumulatedTexts[0] = `**${firstModelNameText}:**\n`;
-      
-      // Process the stream chunk by chunk
       while (true) {
         const { done, value } = await reader.read();
         
         if (done) {
           console.log("Stream complete");
-          
-          // Save all bot responses that were created
-          for (let i = 0; i < botMessageIds.length; i++) {
-            try {
-              const response = await apiService.post('chats/save-chat/', {
-                chat_id: currentActiveChatID, // Use currentActiveChatID
-                message: {
-                  role: 'assistant',
-                  content: accumulatedTexts[i]
-                },
-                message_id: botMessageIds[i]
-              });
-            } catch (error) {
-              console.error(`Error saving bot response ${i}:`, error);
-            }
+          // Finalize the last model's message if it exists and was being typed
+          if (currentModelProcessingIndex !== -1 && botMessageIds[currentModelProcessingIndex]) {
+             updateMessage(botMessageIds[currentModelProcessingIndex], { 
+                content: accumulatedTexts[currentModelProcessingIndex], 
+                isTyping: false 
+             });
           }
-
-          // Handle chat naming for new chats or chats without proper names
-          // isNewChat will be false here as chat creation is separate
-          if (shouldUpdateChatName(currentActiveChatID)) {
-            await chatNameHandling(accumulatedTexts[0] || accumulatedTexts[1] || message, currentActiveChatID); // Use first available text for naming
-          }
-
           break;
         }
         
-        // Decode the chunk and log it for debugging
         const chunk = decoder.decode(value, { stream: true });
-        console.log("Received chunk:", chunk);
-        
-        // Process all lines in the chunk
         const lines = chunk.split('\n');
         
         for (const line of lines) {
@@ -390,70 +340,97 @@ function ChatPage({ onAddModelRequest }) {
             
             if (parsedData.error) {
               console.error("Error from server:", parsedData.error);
-              if (currentModelIndex < botMessageIds.length) {
-                updateMessage(botMessageIds[currentModelIndex], { 
-                  content: accumulatedTexts[currentModelIndex] + "Sorry, an error occurred: " + parsedData.error, 
+              if (currentModelProcessingIndex !== -1 && botMessageIds[currentModelProcessingIndex]) {
+                updateMessage(botMessageIds[currentModelProcessingIndex], { 
+                  content: (accumulatedTexts[currentModelProcessingIndex] || "") + "Sorry, an error occurred: " + parsedData.error, 
+                  isTyping: false 
+                });
+              } else {
+                addMessage({ id: crypto.randomUUID(), content: "Error from server: " + parsedData.error, role: 'bot', isTyping: false, time: Date.now() });
+              }
+            } else if (parsedData.first_model_display_name) {
+              currentModelProcessingIndex = 0;
+              const modelDisplayName = parsedData.first_model_display_name;
+              const newBotId = crypto.randomUUID();
+              
+              botMessageIds[currentModelProcessingIndex] = newBotId;
+              accumulatedTexts[currentModelProcessingIndex] = `**${modelDisplayName}:**\n`;
+              
+              addMessage({
+                id: newBotId,
+                content: accumulatedTexts[currentModelProcessingIndex],
+                role: 'bot',
+                isTyping: true,
+                time: Date.now()
+              });
+            } else if (parsedData.model_separator) {
+              if (currentModelProcessingIndex !== -1 && botMessageIds[currentModelProcessingIndex]) {
+                updateMessage(botMessageIds[currentModelProcessingIndex], { 
+                  content: accumulatedTexts[currentModelProcessingIndex], 
                   isTyping: false 
                 });
               }
+              
+              currentModelProcessingIndex++;
+              const modelDisplayName = parsedData.model_separator.display_name;
+              const newBotId = crypto.randomUUID();
+              
+              botMessageIds[currentModelProcessingIndex] = newBotId;
+              accumulatedTexts[currentModelProcessingIndex] = `**${modelDisplayName}:**\n`;
+              
+              addMessage({
+                id: newBotId,
+                content: accumulatedTexts[currentModelProcessingIndex],
+                role: 'bot',
+                isTyping: true,
+                time: Date.now()
+              });
             } else if (parsedData.content) {
-              // Check if this is a model separator (indicating next model response)
-              if (parsedData.content.includes('--- Response from ') && parsedData.content.includes(' ---')) {
-                console.log("Model separator detected, switching to next model");
-                
-                // Finish the current model
-                if (currentModelIndex < botMessageIds.length) {
-                  updateMessage(botMessageIds[currentModelIndex], { 
-                    content: accumulatedTexts[currentModelIndex], 
-                    isTyping: false 
-                  });
+              if (currentModelProcessingIndex === -1 || !botMessageIds[currentModelProcessingIndex]) {
+                console.warn("Content received before model initialization or for unknown model. Index:", currentModelProcessingIndex, "Line:", line);
+                // Initialize accumulatedText if it's undefined to prevent errors, though this state is not ideal.
+                if (accumulatedTexts[currentModelProcessingIndex] === undefined) {
+                    accumulatedTexts[currentModelProcessingIndex] = ""; 
                 }
-                
-                // Move to next model
-                currentModelIndex++;
-                if (currentModelIndex < numberOfModels) {
-                  console.log(`Switching to model ${currentModelIndex}`);
-                  
-                  // Create the next bot message
-                  const nextBotResponseId = crypto.randomUUID();
-                  botMessageIds.push(nextBotResponseId);
-                  
-                  const nextModelName = models[currentModelIndex]?.name || `Model ${currentModelIndex + 1}`;
-                  accumulatedTexts[currentModelIndex] = `**${nextModelName}:**\n`;
-                  
-                  addMessage({
-                    id: nextBotResponseId,
-                    content: accumulatedTexts[currentModelIndex],
-                    role: 'bot',
-                    isTyping: true,
-                    time: Date.now()
-                  });
-                } else {
-                  console.log("All models processed");
-                }
-                continue;
+                 // If botMessageIds[currentModelProcessingIndex] is undefined, we can't update.
+                // This means addMessage was missed. This path should be avoided by proper signals.
+                if (!botMessageIds[currentModelProcessingIndex]) continue;
               }
               
-              // Add new content to the current model's accumulated text
-              if (currentModelIndex < numberOfModels && currentModelIndex < botMessageIds.length) {
-                accumulatedTexts[currentModelIndex] += parsedData.content;
-                
-                // Force immediate update to show streaming effect
-                updateMessage(botMessageIds[currentModelIndex], { 
-                  content: accumulatedTexts[currentModelIndex], 
-                  isTyping: true 
-                });
-              }
+              accumulatedTexts[currentModelProcessingIndex] += parsedData.content;
+              updateMessage(botMessageIds[currentModelProcessingIndex], { 
+                content: accumulatedTexts[currentModelProcessingIndex], 
+                isTyping: true 
+              });
             }
           } catch (error) {
-            console.error("Error parsing JSON:", error, "Raw line:", line);
+            console.error("Error parsing JSON from stream:", error, "Raw line:", line);
           }
         }
       }
       
-      // Once stream is complete, remove typing indicator from all bot messages
-      for (let i = 0; i < botMessageIds.length; i++) {
-        updateMessage(botMessageIds[i], { isTyping: false });
+      // Save all bot responses that were created
+      for (let i = 0; i <= currentModelProcessingIndex; i++) {
+        if (botMessageIds[i] && accumulatedTexts[i]) {
+          try {
+            await apiService.post('chats/save-chat/', {
+              chat_id: currentActiveChatID,
+              message: {
+                role: 'assistant',
+                content: accumulatedTexts[i] 
+              },
+              message_id: botMessageIds[i],
+              model: models[i % models.length].value // Use modulo to cycle through models
+            });
+          } catch (error) {
+            console.error(`Error saving bot response ${i}:`, error);
+          }
+        }
+      }
+
+      if (shouldUpdateChatName(currentActiveChatID)) {
+        const namingContent = accumulatedTexts[0] || message; 
+        await chatNameHandling(namingContent, currentActiveChatID);
       }
       
       return { success: true };

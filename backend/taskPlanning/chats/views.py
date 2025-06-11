@@ -24,6 +24,8 @@ def save_chat_history(request):
     chat_id = data.get("chat_id")
     message = data.get("message")
     message_id = data.get("message_id")
+    model = data.get("model", None)
+    initialized_inputs = data.get("initialized_inputs", {})  # Optional initialized inputs
     chat_name = data.get("chat_name")  # Optional chat name
 
     if not chat_id or not message:
@@ -37,12 +39,18 @@ def save_chat_history(request):
             defaults={'chat_name': chat_name}
         )
         
+        # Update initialized_inputs if provided
+        if initialized_inputs:
+            chat_obj.initialized_inputs = initialized_inputs
+            chat_obj.save()
+        
         # Create the message
         message_obj = Messages.objects.create(
             chat_id=chat_id,
             message=message,
             user=user,
-            message_id=message_id
+            message_id=message_id,
+            model=model
         )
         # message_obj.save()  # Not needed - create() already saves
     except Exception as e:

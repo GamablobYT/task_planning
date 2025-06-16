@@ -184,6 +184,7 @@ def chat_orchestrator():
     data = request.get_json()
     user_message = data.get("message")
     modelsList = data.get("model", [])
+    history_present_in_request = "history" in data
     
     if not user_message:
         return jsonify({"error": "Message is required"}), 400
@@ -233,7 +234,7 @@ def chat_orchestrator():
             previous_inputs = last_used_initial_inputs.get(model_index, "")
             have_inputs_changed = previous_inputs != current_initial_inputs
 
-            if current_initial_inputs and (is_first_message or have_inputs_changed):
+            if current_initial_inputs and (is_first_message or have_inputs_changed or not history_present_in_request):
                 print("prepending initial inputs")
                 effective_user_message = f"{current_initial_inputs}\n\n--\n\n{user_message}"
 

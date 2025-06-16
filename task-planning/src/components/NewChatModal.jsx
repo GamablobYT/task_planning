@@ -301,6 +301,38 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation, creationMode }) => 
     setCurrentExample(null);
   };
 
+  const handleRenderAsJson = async () => {
+    if (systemPromptContent) {
+      try {
+        const parsed = JSON.parse(systemPromptContent);
+        if (typeof parsed === 'object' && parsed !== null) {
+          setParsedJsonToEdit(parsed);
+          setIsJsonPrompt(true);
+          setJsonValidationError(null);
+        } else {
+          setJsonValidationError('Invalid JSON format: Not an object.');
+        }
+      } catch (e) {
+        setJsonValidationError('Invalid JSON: Could not parse the input.');
+      }
+    }
+  };
+
+  const handleEditAsText = () => {
+    setIsJsonPrompt(false);
+    setParsedJsonToEdit(null);
+  };
+
+  const checkHasValidJson = (content) => {
+    if (!content) return false;
+    try {
+      const parsed = JSON.parse(content);
+      return typeof parsed === 'object' && parsed !== null;
+    } catch (e) {
+      return false;
+    }
+  };
+
   const handleCreateChat = () => {
     let finalSystemPrompt = systemPromptContent;
     if (isJsonPrompt && parsedJsonToEdit) {
@@ -650,6 +682,27 @@ const NewChatModal = ({ isOpen, onClose, onFinalizeCreation, creationMode }) => 
             <div className="space-y-4">
               <p className="text-slate-300">Edit the system prompt. If it's a valid JSON object, you can proceed to select fields for examples.</p>
               {jsonValidationError && <p className="text-yellow-400 text-sm mb-2">{jsonValidationError}</p>}
+              
+              {(checkHasValidJson(systemPromptContent) || isJsonPrompt) && (
+                <div className="flex gap-2 mb-2">
+                  {!isJsonPrompt ? (
+                    <button
+                      onClick={handleRenderAsJson}
+                      className="text-xs bg-sky-500/20 text-sky-300 px-2 py-1 rounded hover:bg-sky-500/30 transition-colors"
+                    >
+                      Render as JSON
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleEditAsText}
+                      className="text-xs bg-slate-500/20 text-slate-300 px-2 py-1 rounded hover:bg-slate-500/30 transition-colors"
+                    >
+                      Edit as Text
+                    </button>
+                  )}
+                </div>
+              )}
+              
               {isJsonPrompt && parsedJsonToEdit ? (
                 <div className="bg-slate-700 border border-slate-600 rounded-lg p-3 max-h-80 overflow-y-auto custom-scrollbar-thin">
                   <JsonRenderer data={parsedJsonToEdit} onDataChange={handleJsonDataChange} />
